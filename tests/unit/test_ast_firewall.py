@@ -1,3 +1,9 @@
+"""
+Unit tests for the AST-based SQL firewall.
+"""
+# type: ignore
+# ruff: noqa
+
 import pytest
 from src.core.security import validate_ast, SecurityError
 

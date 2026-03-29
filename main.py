@@ -1,6 +1,7 @@
-def main():
-    print("Hello from argus-sql!")
-
+"""
+Main entry point for the Argus SQL project.
+"""
+from src.config import setup_logging
 
 if __name__ == "__main__":
-    main()
+    setup_logging()

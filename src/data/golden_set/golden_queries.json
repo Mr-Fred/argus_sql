@@ -1,0 +1,600 @@
+{
+  "metadata": {
+    "name": "ARGUS-SQL BigQuery Golden Set",
+    "version": "1.0",
+    "total_pairs": 50,
+    "dataset": "argus_dev_dataset",
+    "tables": [
+      "schools",
+      "frpm",
+      "satscores",
+      "member",
+      "major",
+      "event",
+      "attendance",
+      "budget",
+      "expense",
+      "income",
+      "zip_code"
+    ],
+    "categories": {
+      "window_function": 10,
+      "date_time": 10,
+      "unnest_array": 15,
+      "advanced": 15
+    },
+    "difficulty_distribution": {
+      "medium": 21,
+      "easy": 13,
+      "hard": 16
+    },
+    "notes": "All SQL is written for Google BigQuery (GoogleSQL dialect). Column names containing spaces are backtick-quoted. Date strings are explicitly CAST to DATE/DATETIME before date functions are applied. TABLESAMPLE results are non-deterministic by design."
+  },
+  "golden_set": [
+    {
+      "id": "WIN-01",
+      "category": "window_function",
+      "difficulty": "medium",
+      "tables": [
+        "schools",
+        "satscores"
+      ],
+      "feature": "RANK() OVER (PARTITION BY ... ORDER BY ...)",
+      "question": "Rank every school within its county by average SAT math score, highest first. Return the county, school name, average math score, and rank.",
+      "gold_sql": "SELECT\n  s.County,\n  s.School,\n  sat.AvgScrMath,\n  RANK() OVER (\n    PARTITION BY s.County\n    ORDER BY sat.AvgScrMath DESC\n  ) AS county_math_rank\nFROM argus_dev_dataset.schools AS s\nJOIN argus_dev_dataset.satscores AS sat\n  ON s.CDSCode = sat.cds\nWHERE sat.AvgScrMath IS NOT NULL"
+    },
+    {
+      "id": "WIN-02",
+      "category": "window_function",
+      "difficulty": "medium",
+      "tables": [
+        "expense",
+        "member"
+      ],
+      "feature": "SUM() OVER (PARTITION BY ... ORDER BY ... ROWS UNBOUNDED PRECEDING)",
+      "question": "For each member, show each approved expense with a running cumulative total of their spending ordered by expense date.",
+      "gold_sql": "SELECT\n  m.first_name,\n  m.last_name,\n  e.expense_date,\n  e.cost,\n  SUM(e.cost) OVER (\n    PARTITION BY e.link_to_member\n    ORDER BY e.expense_date\n    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n  ) AS cumulative_spend\nFROM argus_dev_dataset.expense AS e\nJOIN argus_dev_dataset.member AS m\n  ON e.link_to_member = m.member_id\nWHERE e.approved = 'true'\nORDER BY m.last_name, e.expense_date"
+    },
+    {
+      "id": "WIN-03",
+      "category": "window_function",
+      "difficulty": "medium",
+      "tables": [
+        "satscores"
+      ],
+      "feature": "LAG() OVER (PARTITION BY ... ORDER BY ...)",
+      "question": "For each school, show its SAT reading score alongside the reading score of the previous school in the same district when sorted alphabetically by school name.",
+      "gold_sql": "SELECT\n  dname,\n  sname,\n  AvgScrRead,\n  LAG(AvgScrRead) OVER (\n    PARTITION BY dname\n    ORDER BY sname\n  ) AS prev_school_reading\nFROM argus_dev_dataset.satscores\nWHERE AvgScrRead IS NOT NULL"
+    },
+    {
+      "id": "WIN-04",
+      "category": "window_function",
+      "difficulty": "easy",
+      "tables": [
+        "frpm"
+      ],
+      "feature": "NTILE() OVER (ORDER BY ...)",
+      "question": "Divide all K-12 schools into four equal quartiles based on their FRPM eligibility percentage, highest first. Return school name, county, FRPM percentage, and quartile number.",
+      "gold_sql": "SELECT\n  School_Name,\n  County_Name,\n  Percent_Eligible_FRPM_K_12_,\n  NTILE(4) OVER (\n    ORDER BY Percent_Eligible_FRPM_K_12_ DESC\n  ) AS frpm_quartile\nFROM argus_dev_dataset.frpm\nWHERE Enrollment_K_12_ IS NOT NULL\n  AND Percent_Eligible_FRPM_K_12_ IS NOT NULL"
+    },
+    {
+      "id": "WIN-05",
+      "category": "window_function",
+      "difficulty": "hard",
+      "tables": [
+        "satscores"
+      ],
+      "feature": "AVG() OVER (PARTITION BY ... ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)",
+      "question": "Calculate a 3-school rolling average of SAT writing scores within each district, ordered by number of test takers ascending. Return district, school, number of test takers, actual writing score, and rolling average.",
+      "gold_sql": "SELECT\n  dname,\n  sname,\n  NumTstTakr,\n  AvgScrWrite,\n  AVG(AvgScrWrite) OVER (\n    PARTITION BY dname\n    ORDER BY NumTstTakr\n    ROWS BETWEEN 2 PRECEDING AND CURRENT ROW\n  ) AS rolling_avg_writing\nFROM argus_dev_dataset.satscores\nWHERE AvgScrWrite IS NOT NULL"
+    },
+    {
+      "id": "WIN-06",
+      "category": "window_function",
+      "difficulty": "hard",
+      "tables": [
+        "satscores"
+      ],
+      "feature": "ROW_NUMBER() OVER (...) + QUALIFY",
+      "question": "Return only the school with the highest number of SAT test takers in each county. Use QUALIFY to filter the window function result directly without a subquery.",
+      "gold_sql": "SELECT\n  cname,\n  sname,\n  NumTstTakr\nFROM argus_dev_dataset.satscores\nWHERE NumTstTakr IS NOT NULL\nQUALIFY ROW_NUMBER() OVER (\n  PARTITION BY cname\n  ORDER BY NumTstTakr DESC\n) = 1"
+    },
+    {
+      "id": "WIN-07",
+      "category": "window_function",
+      "difficulty": "medium",
+      "tables": [
+        "event"
+      ],
+      "feature": "LEAD() OVER (PARTITION BY ... ORDER BY ...)",
+      "question": "For each event, show its date and the date of the next event of the same type.",
+      "gold_sql": "SELECT\n  event_name,\n  type,\n  event_date,\n  LEAD(event_date) OVER (\n    PARTITION BY type\n    ORDER BY event_date\n  ) AS next_event_same_type\nFROM argus_dev_dataset.event"
+    },
+    {
+      "id": "WIN-08",
+      "category": "window_function",
+      "difficulty": "hard",
+      "tables": [
+        "expense",
+        "budget"
+      ],
+      "feature": "PERCENT_RANK() OVER (PARTITION BY ... ORDER BY ...)",
+      "question": "For each expense, show which percentage rank it occupies within its budget category by cost. Return category, expense description, cost, and the percentage rank.",
+      "gold_sql": "SELECT\n  b.category,\n  e.expense_description,\n  e.cost,\n  ROUND(PERCENT_RANK() OVER (\n    PARTITION BY b.category\n    ORDER BY e.cost\n  ), 4) AS cost_percent_rank\nFROM argus_dev_dataset.expense AS e\nJOIN argus_dev_dataset.budget AS b\n  ON e.link_to_budget = b.budget_id"
+    },
+    {
+      "id": "WIN-09",
+      "category": "window_function",
+      "difficulty": "medium",
+      "tables": [
+        "budget"
+      ],
+      "feature": "SUM() OVER (PARTITION BY ... ORDER BY ... ROWS UNBOUNDED PRECEDING)",
+      "question": "For each event, show every budget line alongside the cumulative total amount spent across all budget lines for that event, ordered alphabetically by category.",
+      "gold_sql": "SELECT\n  link_to_event,\n  category,\n  spent,\n  SUM(spent) OVER (\n    PARTITION BY link_to_event\n    ORDER BY category\n    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n  ) AS cumulative_event_spent\nFROM argus_dev_dataset.budget\nWHERE spent IS NOT NULL"
+    },
+    {
+      "id": "WIN-10",
+      "category": "window_function",
+      "difficulty": "hard",
+      "tables": [
+        "expense"
+      ],
+      "feature": "FIRST_VALUE() OVER (PARTITION BY ... ORDER BY ...)",
+      "question": "For each expense row, also show the description and cost of the very first expense ever submitted by the same member.",
+      "gold_sql": "SELECT\n  link_to_member,\n  expense_date,\n  expense_description,\n  cost,\n  FIRST_VALUE(expense_description) OVER (\n    PARTITION BY link_to_member\n    ORDER BY expense_date\n    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n  ) AS first_ever_expense_desc,\n  FIRST_VALUE(cost) OVER (\n    PARTITION BY link_to_member\n    ORDER BY expense_date\n    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n  ) AS first_ever_expense_cost\nFROM argus_dev_dataset.expense"
+    },
+    {
+      "id": "DAT-01",
+      "category": "date_time",
+      "difficulty": "easy",
+      "tables": [
+        "schools"
+      ],
+      "feature": "DATE_DIFF(CURRENT_DATE(), CAST(... AS DATE), YEAR)",
+      "question": "How many full years has each active school been operating as of today? Return the school name, county, open date, and years operating.",
+      "gold_sql": "SELECT\n  CDSCode,\n  School,\n  County,\n  OpenDate,\n  DATE_DIFF(CURRENT_DATE(), CAST(OpenDate AS DATE), YEAR) AS years_operating\nFROM argus_dev_dataset.schools\nWHERE StatusType = 'Active'\n  AND OpenDate IS NOT NULL\nORDER BY years_operating DESC"
+    },
+    {
+      "id": "DAT-02",
+      "category": "date_time",
+      "difficulty": "easy",
+      "tables": [
+        "expense"
+      ],
+      "feature": "EXTRACT(YEAR ...) and EXTRACT(QUARTER ...)",
+      "question": "For each expense, extract the calendar year and quarter from the expense date. Return expense ID, description, original date, year, and quarter.",
+      "gold_sql": "SELECT\n  expense_id,\n  expense_description,\n  expense_date,\n  EXTRACT(YEAR FROM CAST(expense_date AS DATE)) AS expense_year,\n  EXTRACT(QUARTER FROM CAST(expense_date AS DATE)) AS expense_quarter,\n  cost\nFROM argus_dev_dataset.expense"
+    },
+    {
+      "id": "DAT-03",
+      "category": "date_time",
+      "difficulty": "easy",
+      "tables": [
+        "expense"
+      ],
+      "feature": "DATE_TRUNC(... , MONTH) + GROUP BY",
+      "question": "Truncate each expense to the first of its month and calculate total spend per calendar month. Return month start and total spend ordered chronologically.",
+      "gold_sql": "SELECT\n  DATE_TRUNC(CAST(expense_date AS DATE), MONTH) AS expense_month,\n  SUM(cost) AS total_monthly_spend,\n  COUNT(*) AS expense_count\nFROM argus_dev_dataset.expense\nGROUP BY 1\nORDER BY 1"
+    },
+    {
+      "id": "DAT-04",
+      "category": "date_time",
+      "difficulty": "easy",
+      "tables": [
+        "expense"
+      ],
+      "feature": "FORMAT_DATE('%B %d, %Y', ...)",
+      "question": "Format each expense date as a human-readable string in the form 'Month DD, YYYY'. Return the expense ID, description, formatted date, and cost.",
+      "gold_sql": "SELECT\n  expense_id,\n  expense_description,\n  FORMAT_DATE('%B %d, %Y', CAST(expense_date AS DATE)) AS formatted_date,\n  cost\nFROM argus_dev_dataset.expense\nORDER BY CAST(expense_date AS DATE)"
+    },
+    {
+      "id": "DAT-05",
+      "category": "date_time",
+      "difficulty": "medium",
+      "tables": [
+        "expense"
+      ],
+      "feature": "DATE_DIFF(MAX(...), MIN(...), DAY)",
+      "question": "For each member, find the date of their earliest and most recent expense, and calculate how many days elapsed between the two.",
+      "gold_sql": "SELECT\n  link_to_member,\n  MIN(CAST(expense_date AS DATE)) AS first_expense_date,\n  MAX(CAST(expense_date AS DATE)) AS last_expense_date,\n  DATE_DIFF(\n    MAX(CAST(expense_date AS DATE)),\n    MIN(CAST(expense_date AS DATE)),\n    DAY\n  ) AS days_active\nFROM argus_dev_dataset.expense\nGROUP BY link_to_member\nHAVING COUNT(*) > 1"
+    },
+    {
+      "id": "DAT-06",
+      "category": "date_time",
+      "difficulty": "medium",
+      "tables": [
+        "income"
+      ],
+      "feature": "EXTRACT(DAYOFWEEK FROM ...) and FORMAT_DATE('%A', ...)",
+      "question": "Find all income records received on a weekend (Saturday or Sunday). Return income ID, date received, amount, source, and the day of the week name.",
+      "gold_sql": "SELECT\n  income_id,\n  date_received,\n  amount,\n  source,\n  FORMAT_DATE('%A', CAST(date_received AS DATE)) AS day_of_week\nFROM argus_dev_dataset.income\nWHERE EXTRACT(DAYOFWEEK FROM CAST(date_received AS DATE)) IN (1, 7)"
+    },
+    {
+      "id": "DAT-07",
+      "category": "date_time",
+      "difficulty": "medium",
+      "tables": [
+        "schools"
+      ],
+      "feature": "DATE_DIFF with ClosedDate + CURRENT_DATE()",
+      "question": "List all schools that have been closed for more than 20 years as of today. Return school name, county, close date, and years since closure, ordered by years descending.",
+      "gold_sql": "SELECT\n  CDSCode,\n  School,\n  County,\n  ClosedDate,\n  DATE_DIFF(CURRENT_DATE(), CAST(ClosedDate AS DATE), YEAR) AS years_since_closed\nFROM argus_dev_dataset.schools\nWHERE ClosedDate IS NOT NULL\n  AND DATE_DIFF(CURRENT_DATE(), CAST(ClosedDate AS DATE), YEAR) > 20\nORDER BY years_since_closed DESC"
+    },
+    {
+      "id": "DAT-08",
+      "category": "date_time",
+      "difficulty": "medium",
+      "tables": [
+        "event"
+      ],
+      "feature": "PARSE_DATETIME + DATE_TRUNC(..., QUARTER)",
+      "question": "Group all events by calendar quarter and count how many were closed versus open in each quarter.",
+      "gold_sql": "SELECT\n  DATE_TRUNC(\n    CAST(PARSE_DATETIME('%Y-%m-%dT%H:%M:%S', event_date) AS DATE),\n    QUARTER\n  ) AS quarter_start,\n  COUNTIF(status = 'Closed') AS closed_events,\n  COUNTIF(status = 'Open') AS open_events,\n  COUNT(*) AS total_events\nFROM argus_dev_dataset.event\nGROUP BY 1\nORDER BY 1"
+    },
+    {
+      "id": "DAT-09",
+      "category": "date_time",
+      "difficulty": "easy",
+      "tables": [
+        "schools"
+      ],
+      "feature": "EXTRACT(YEAR FROM CAST(... AS DATE))",
+      "question": "Count how many school records were last updated in each calendar year. Return the update year and count, ordered chronologically.",
+      "gold_sql": "SELECT\n  EXTRACT(YEAR FROM CAST(LastUpdate AS DATE)) AS update_year,\n  COUNT(*) AS schools_updated\nFROM argus_dev_dataset.schools\nWHERE LastUpdate IS NOT NULL\nGROUP BY 1\nORDER BY 1"
+    },
+    {
+      "id": "DAT-10",
+      "category": "date_time",
+      "difficulty": "hard",
+      "tables": [
+        "expense",
+        "budget"
+      ],
+      "feature": "DATE_DIFF between MIN and MAX dates grouped by category",
+      "question": "For each budget category, calculate the number of days between the earliest and the most recent expense logged against it. Return category, earliest date, latest date, and the day span.",
+      "gold_sql": "SELECT\n  b.category,\n  MIN(CAST(e.expense_date AS DATE)) AS earliest_expense,\n  MAX(CAST(e.expense_date AS DATE)) AS latest_expense,\n  DATE_DIFF(\n    MAX(CAST(e.expense_date AS DATE)),\n    MIN(CAST(e.expense_date AS DATE)),\n    DAY\n  ) AS date_span_days\nFROM argus_dev_dataset.expense AS e\nJOIN argus_dev_dataset.budget AS b\n  ON e.link_to_budget = b.budget_id\nGROUP BY b.category\nORDER BY date_span_days DESC"
+    },
+    {
+      "id": "ARR-01",
+      "category": "unnest_array",
+      "difficulty": "medium",
+      "tables": [
+        "schools"
+      ],
+      "feature": "UNNEST(SPLIT(..., '-')) WITH OFFSET",
+      "question": "Split each school's offered grade span (stored as 'K-8' or 'P-Adult') on the hyphen and return the low grade and high grade as separate rows with a positional label.",
+      "gold_sql": "SELECT\n  CDSCode,\n  School,\n  County,\n  grade_component,\n  CASE grade_offset\n    WHEN 0 THEN 'low_grade'\n    WHEN 1 THEN 'high_grade'\n    ELSE 'other'\n  END AS grade_label\nFROM argus_dev_dataset.schools,\n  UNNEST(SPLIT(GSoffered, '-')) AS grade_component WITH OFFSET AS grade_offset\nWHERE GSoffered IS NOT NULL"
+    },
+    {
+      "id": "ARR-02",
+      "category": "unnest_array",
+      "difficulty": "medium",
+      "tables": [
+        "schools"
+      ],
+      "feature": "ARRAY_AGG(... ORDER BY ...) + ARRAY_LENGTH",
+      "question": "For each county, collect the names of all active schools into an ordered array and return the array alongside the count of schools.",
+      "gold_sql": "SELECT\n  County,\n  ARRAY_AGG(School IGNORE NULLS ORDER BY School) AS school_names,\n  ARRAY_LENGTH(ARRAY_AGG(School IGNORE NULLS)) AS school_count\nFROM argus_dev_dataset.schools\nWHERE StatusType = 'Active'\nGROUP BY County\nORDER BY school_count DESC"
+    },
+    {
+      "id": "ARR-03",
+      "category": "unnest_array",
+      "difficulty": "easy",
+      "tables": [
+        "schools"
+      ],
+      "feature": "UNNEST([...]) as inline lookup table",
+      "question": "Retrieve active schools located in any of the following counties: Los Angeles, San Francisco, San Diego, or Fresno. Use UNNEST on a literal array instead of an IN clause.",
+      "gold_sql": "SELECT\n  s.CDSCode,\n  s.School,\n  s.County,\n  s.EILName,\n  s.City\nFROM argus_dev_dataset.schools AS s\nWHERE s.County IN (\n  SELECT target_county\n  FROM UNNEST(['Los Angeles', 'San Francisco', 'San Diego', 'Fresno']) AS target_county\n)\n  AND s.StatusType = 'Active'\nORDER BY s.County, s.School"
+    },
+    {
+      "id": "ARR-04",
+      "category": "unnest_array",
+      "difficulty": "medium",
+      "tables": [
+        "budget"
+      ],
+      "feature": "ARRAY_AGG(DISTINCT ...) + ARRAY_LENGTH in HAVING",
+      "question": "For each event, aggregate all unique budget categories into an array and return only those events that have more than two distinct budget categories.",
+      "gold_sql": "SELECT\n  link_to_event,\n  ARRAY_AGG(DISTINCT category ORDER BY category) AS budget_categories,\n  ARRAY_LENGTH(ARRAY_AGG(DISTINCT category)) AS num_categories\nFROM argus_dev_dataset.budget\nGROUP BY link_to_event\nHAVING ARRAY_LENGTH(ARRAY_AGG(DISTINCT category)) > 2"
+    },
+    {
+      "id": "ARR-05",
+      "category": "unnest_array",
+      "difficulty": "hard",
+      "tables": [
+        "expense"
+      ],
+      "feature": "ARRAY_AGG(STRUCT(...) ORDER BY ...)",
+      "question": "For each member, aggregate all their expenses into an array of STRUCTs, each containing the expense description and cost, ordered by cost descending.",
+      "gold_sql": "SELECT\n  link_to_member,\n  ARRAY_AGG(\n    STRUCT(expense_description AS description, cost AS amount)\n    ORDER BY cost DESC\n  ) AS expenses_by_cost\nFROM argus_dev_dataset.expense\nGROUP BY link_to_member"
+    },
+    {
+      "id": "ARR-06",
+      "category": "unnest_array",
+      "difficulty": "hard",
+      "tables": [
+        "frpm"
+      ],
+      "feature": "GENERATE_ARRAY + UNNEST + NTILE",
+      "question": "Divide schools into 5 FRPM quintiles, then use UNNEST(GENERATE_ARRAY(1, 5)) to produce one summary row per quintile showing how many schools fall into each band.",
+      "gold_sql": "SELECT\n  quintile_number,\n  COUNT(*) AS school_count\nFROM (\n  SELECT\n    School_Name,\n    NTILE(5) OVER (ORDER BY Percent_Eligible_FRPM_K_12_ DESC) AS frpm_quintile\n  FROM argus_dev_dataset.frpm\n  WHERE Percent_Eligible_FRPM_K_12_ IS NOT NULL\n) AS quintile_data\nCROSS JOIN UNNEST(GENERATE_ARRAY(1, 5)) AS quintile_number\nWHERE quintile_number = frpm_quintile\nGROUP BY quintile_number\nORDER BY quintile_number"
+    },
+    {
+      "id": "ARR-07",
+      "category": "unnest_array",
+      "difficulty": "medium",
+      "tables": [
+        "member",
+        "major"
+      ],
+      "feature": "ARRAY_AGG(CONCAT(...)) grouped by college",
+      "question": "For each college, collect the full names (first + last) of all club members studying a major offered by that college into an ordered array.",
+      "gold_sql": "SELECT\n  mj.college,\n  ARRAY_AGG(\n    CONCAT(m.first_name, ' ', m.last_name)\n    ORDER BY m.last_name, m.first_name\n  ) AS members,\n  COUNT(m.member_id) AS member_count\nFROM argus_dev_dataset.member AS m\nJOIN argus_dev_dataset.major AS mj\n  ON m.link_to_major = mj.major_id\nGROUP BY mj.college\nORDER BY member_count DESC"
+    },
+    {
+      "id": "ARR-08",
+      "category": "unnest_array",
+      "difficulty": "hard",
+      "tables": [
+        "attendance",
+        "event",
+        "member"
+      ],
+      "feature": "ARRAY_AGG in CTE + UNNEST ... WITH OFFSET",
+      "question": "For each member, build an ordered array of event names they attended (by event date), then UNNEST to return one row per attendance with its sequence number.",
+      "gold_sql": "WITH member_events AS (\n  SELECT\n    a.link_to_member,\n    ARRAY_AGG(e.event_name ORDER BY e.event_date) AS events_attended\n  FROM argus_dev_dataset.attendance AS a\n  JOIN argus_dev_dataset.event AS e\n    ON a.link_to_event = e.event_id\n  GROUP BY a.link_to_member\n)\nSELECT\n  m.first_name,\n  m.last_name,\n  event_name,\n  attendance_offset + 1 AS attendance_sequence\nFROM member_events\nJOIN argus_dev_dataset.member AS m\n  ON member_events.link_to_member = m.member_id,\n  UNNEST(events_attended) AS event_name WITH OFFSET AS attendance_offset\nORDER BY m.last_name, attendance_offset"
+    },
+    {
+      "id": "ARR-09",
+      "category": "unnest_array",
+      "difficulty": "medium",
+      "tables": [
+        "budget"
+      ],
+      "feature": "ARRAY_AGG(DISTINCT ...) + IN UNNEST(...) subquery",
+      "question": "Return every event that has a budget line for the 'Food' category, using an IN UNNEST subquery over the aggregated category array.",
+      "gold_sql": "SELECT\n  link_to_event,\n  ARRAY_AGG(DISTINCT category ORDER BY category) AS all_categories,\n  ARRAY_LENGTH(ARRAY_AGG(DISTINCT category)) AS num_categories\nFROM argus_dev_dataset.budget\nGROUP BY link_to_event\nHAVING 'Food' IN UNNEST(ARRAY_AGG(DISTINCT category))"
+    },
+    {
+      "id": "ARR-10",
+      "category": "unnest_array",
+      "difficulty": "medium",
+      "tables": [
+        "member"
+      ],
+      "feature": "SPLIT + array subscript [OFFSET(0)]",
+      "question": "Extract the area code from each member's phone number by splitting on the hyphen character and selecting the first segment. Return member ID, full name, full phone, and extracted area code.",
+      "gold_sql": "SELECT\n  member_id,\n  CONCAT(first_name, ' ', last_name) AS full_name,\n  phone,\n  SPLIT(phone, '-')[OFFSET(0)] AS area_code\nFROM argus_dev_dataset.member\nWHERE phone IS NOT NULL"
+    },
+    {
+      "id": "ARR-11",
+      "category": "unnest_array",
+      "difficulty": "hard",
+      "tables": [
+        "satscores"
+      ],
+      "feature": "ARRAY_AGG(... ORDER BY ... LIMIT 3)",
+      "question": "For each school district, collect into an array the names of the top 3 schools by average SAT math score.",
+      "gold_sql": "SELECT\n  dname,\n  ARRAY_AGG(sname ORDER BY AvgScrMath DESC LIMIT 3) AS top3_schools_by_math\nFROM argus_dev_dataset.satscores\nWHERE AvgScrMath IS NOT NULL\nGROUP BY dname\nORDER BY dname"
+    },
+    {
+      "id": "ARR-12",
+      "category": "unnest_array",
+      "difficulty": "easy",
+      "tables": [
+        "member",
+        "major"
+      ],
+      "feature": "WHERE ... IN (SELECT FROM UNNEST([...]))",
+      "question": "Find members whose zip code matches any value in the list 94025, 94107, 90001, or 94103, using UNNEST on a literal array. Return full name, zip, and their college.",
+      "gold_sql": "SELECT\n  CONCAT(m.first_name, ' ', m.last_name) AS full_name,\n  m.zip,\n  mj.college\nFROM argus_dev_dataset.member AS m\nJOIN argus_dev_dataset.major AS mj\n  ON m.link_to_major = mj.major_id\nWHERE m.zip IN (\n  SELECT zip_val\n  FROM UNNEST([94025, 94107, 90001, 94103]) AS zip_val\n)"
+    },
+    {
+      "id": "ARR-13",
+      "category": "unnest_array",
+      "difficulty": "medium",
+      "tables": [
+        "expense",
+        "budget"
+      ],
+      "feature": "STRING_AGG + SPLIT + ARRAY_TO_STRING",
+      "question": "For each event, concatenate all expense descriptions into a comma-separated string using STRING_AGG, then convert it back to an array with SPLIT and display the result.",
+      "gold_sql": "SELECT\n  b.link_to_event,\n  STRING_AGG(e.expense_description, ', ' ORDER BY e.expense_date) AS all_descriptions,\n  SPLIT(\n    STRING_AGG(e.expense_description, ', ' ORDER BY e.expense_date),\n    ', '\n  ) AS descriptions_array\nFROM argus_dev_dataset.expense AS e\nJOIN argus_dev_dataset.budget AS b\n  ON e.link_to_budget = b.budget_id\nGROUP BY b.link_to_event"
+    },
+    {
+      "id": "ARR-14",
+      "category": "unnest_array",
+      "difficulty": "medium",
+      "tables": [
+        "member",
+        "major"
+      ],
+      "feature": "ARRAY_TO_STRING(ARRAY_AGG(DISTINCT ... ORDER BY ...), separator)",
+      "question": "For each department, return the distinct club member positions as a pipe-separated string, using ARRAY_TO_STRING over an ARRAY_AGG of distinct values.",
+      "gold_sql": "SELECT\n  mj.department,\n  ARRAY_TO_STRING(\n    ARRAY_AGG(DISTINCT m.position ORDER BY m.position),\n    ' | '\n  ) AS positions_held\nFROM argus_dev_dataset.member AS m\nJOIN argus_dev_dataset.major AS mj\n  ON m.link_to_major = mj.major_id\nWHERE m.position IS NOT NULL\nGROUP BY mj.department\nORDER BY mj.department"
+    },
+    {
+      "id": "ARR-15",
+      "category": "unnest_array",
+      "difficulty": "hard",
+      "tables": [
+        "income"
+      ],
+      "feature": "GENERATE_DATE_ARRAY + UNNEST + LEFT JOIN",
+      "question": "Generate a monthly date spine for the year 2023 and left-join it with income records to show total income per month, including months with no income as zero.",
+      "gold_sql": "SELECT\n  month_start,\n  IFNULL(SUM(i.amount), 0) AS total_income,\n  COUNT(i.income_id) AS income_record_count\nFROM UNNEST(\n  GENERATE_DATE_ARRAY(DATE '2023-01-01', DATE '2023-12-01', INTERVAL 1 MONTH)\n) AS month_start\nLEFT JOIN argus_dev_dataset.income AS i\n  ON DATE_TRUNC(CAST(i.date_received AS DATE), MONTH) = month_start\nGROUP BY month_start\nORDER BY month_start"
+    },
+    {
+      "id": "ADV-01",
+      "category": "advanced",
+      "difficulty": "hard",
+      "tables": [
+        "expense",
+        "budget"
+      ],
+      "feature": "QUALIFY with RANK()",
+      "question": "Return only the single most expensive expense per budget category, without using a subquery or CTE. Use the QUALIFY clause to filter the window function result directly.",
+      "gold_sql": "SELECT\n  b.category,\n  e.expense_description,\n  e.cost,\n  e.link_to_member\nFROM argus_dev_dataset.expense AS e\nJOIN argus_dev_dataset.budget AS b\n  ON e.link_to_budget = b.budget_id\nQUALIFY RANK() OVER (\n  PARTITION BY b.category\n  ORDER BY e.cost DESC\n) = 1"
+    },
+    {
+      "id": "ADV-02",
+      "category": "advanced",
+      "difficulty": "easy",
+      "tables": [
+        "expense"
+      ],
+      "feature": "COUNTIF() + SAFE_DIVIDE()",
+      "question": "For each member, count their total expenses, approved expenses, and rejected expenses in a single scan using COUNTIF. Also compute the approval rate using SAFE_DIVIDE.",
+      "gold_sql": "SELECT\n  link_to_member,\n  COUNT(*) AS total_expenses,\n  COUNTIF(approved = 'true') AS approved_count,\n  COUNTIF(approved = 'false') AS rejected_count,\n  ROUND(SAFE_DIVIDE(COUNTIF(approved = 'true'), COUNT(*)), 4) AS approval_rate,\n  SUM(cost) AS total_cost\nFROM argus_dev_dataset.expense\nGROUP BY link_to_member\nORDER BY total_cost DESC"
+    },
+    {
+      "id": "ADV-03",
+      "category": "advanced",
+      "difficulty": "easy",
+      "tables": [
+        "member"
+      ],
+      "feature": "APPROX_COUNT_DISTINCT()",
+      "question": "Compare the approximate distinct zip code count (using APPROX_COUNT_DISTINCT) versus the exact distinct count for all member records.",
+      "gold_sql": "SELECT\n  COUNT(DISTINCT zip) AS exact_distinct_zips,\n  APPROX_COUNT_DISTINCT(zip) AS approx_distinct_zips\nFROM argus_dev_dataset.member"
+    },
+    {
+      "id": "ADV-04",
+      "category": "advanced",
+      "difficulty": "easy",
+      "tables": [
+        "frpm"
+      ],
+      "feature": "SAFE_DIVIDE() to avoid division by zero",
+      "question": "Calculate the FRPM eligibility rate for every school using SAFE_DIVIDE to handle schools with zero or null enrollment without throwing an error. Return school name, county, enrollment, FRPM count, and computed rate.",
+      "gold_sql": "SELECT\n  School_Name,\n  County_Name,\n  Enrollment_K_12_,\n  FRPM_Count_K_12_,\n  ROUND(SAFE_DIVIDE(FRPM_Count_K_12_, Enrollment_K_12_), 4) AS frpm_rate,\n  ROUND(SAFE_DIVIDE(FRPM_Count_K_12_, Enrollment_K_12_) * 100, 2) AS frpm_pct\nFROM argus_dev_dataset.frpm\nORDER BY frpm_rate DESC"
+    },
+    {
+      "id": "ADV-05",
+      "category": "advanced",
+      "difficulty": "easy",
+      "tables": [
+        "frpm"
+      ],
+      "feature": "SAFE_CAST()",
+      "question": "Cast the CDSCode column in the frpm table to INT64 using SAFE_CAST. Return only rows where the cast succeeds (non-NULL result), along with school name and enrollment.",
+      "gold_sql": "SELECT\n  School_Name,\n  County_Name,\n  SAFE_CAST(CDSCode AS INT64) AS cds_as_int,\n  Enrollment_K_12_\nFROM argus_dev_dataset.frpm\nWHERE SAFE_CAST(CDSCode AS INT64) IS NOT NULL"
+    },
+    {
+      "id": "ADV-06",
+      "category": "advanced",
+      "difficulty": "medium",
+      "tables": [
+        "member"
+      ],
+      "feature": "REGEXP_EXTRACT()",
+      "question": "Extract the domain name from each member's email address using REGEXP_EXTRACT. Return the member ID, full name, full email, and extracted domain.",
+      "gold_sql": "SELECT\n  member_id,\n  CONCAT(first_name, ' ', last_name) AS full_name,\n  email,\n  REGEXP_EXTRACT(email, r'@(.+)') AS email_domain\nFROM argus_dev_dataset.member\nWHERE email IS NOT NULL"
+    },
+    {
+      "id": "ADV-07",
+      "category": "advanced",
+      "difficulty": "medium",
+      "tables": [
+        "member"
+      ],
+      "feature": "REGEXP_CONTAINS()",
+      "question": "Find all members whose email address belongs to an educational institution (domain ends in .edu) using REGEXP_CONTAINS. Return member ID, full name, email, and position.",
+      "gold_sql": "SELECT\n  member_id,\n  CONCAT(first_name, ' ', last_name) AS full_name,\n  email,\n  position\nFROM argus_dev_dataset.member\nWHERE REGEXP_CONTAINS(LOWER(email), r'\\.edu$')"
+    },
+    {
+      "id": "ADV-08",
+      "category": "advanced",
+      "difficulty": "hard",
+      "tables": [
+        "event"
+      ],
+      "feature": "JSON_EXTRACT_SCALAR()",
+      "question": "Treat the event notes column as a JSON string and extract the value of the 'organizer' key using JSON_EXTRACT_SCALAR. Return event ID, event name, full notes, and extracted organizer.",
+      "gold_sql": "SELECT\n  event_id,\n  event_name,\n  notes,\n  JSON_EXTRACT_SCALAR(notes, '$.organizer') AS organizer,\n  JSON_EXTRACT_SCALAR(notes, '$.capacity') AS capacity\nFROM argus_dev_dataset.event\nWHERE notes IS NOT NULL\n  AND JSON_EXTRACT_SCALAR(notes, '$.organizer') IS NOT NULL"
+    },
+    {
+      "id": "ADV-09",
+      "category": "advanced",
+      "difficulty": "medium",
+      "tables": [
+        "budget"
+      ],
+      "feature": "IFNULL() + COALESCE() + IF()",
+      "question": "For each budget line, use IFNULL to replace NULL remaining values with 0, use COALESCE to compute a fallback remaining from amount minus spent, and flag any line as 'OVER BUDGET' or 'OK' using IF.",
+      "gold_sql": "SELECT\n  link_to_event,\n  category,\n  amount,\n  spent,\n  IFNULL(remaining, 0) AS remaining_safe,\n  COALESCE(remaining, amount - spent, 0) AS remaining_computed,\n  IF(COALESCE(remaining, 0) < 0, 'OVER BUDGET', 'OK') AS budget_status\nFROM argus_dev_dataset.budget"
+    },
+    {
+      "id": "ADV-10",
+      "category": "advanced",
+      "difficulty": "easy",
+      "tables": [
+        "schools"
+      ],
+      "feature": "ANY_VALUE()",
+      "question": "For each active county, return a non-deterministic sample school name and city alongside the total school count, using ANY_VALUE for the sample fields.",
+      "gold_sql": "SELECT\n  County,\n  ANY_VALUE(School) AS sample_school,\n  ANY_VALUE(City) AS sample_city,\n  COUNT(*) AS total_active_schools\nFROM argus_dev_dataset.schools\nWHERE StatusType = 'Active'\nGROUP BY County\nORDER BY total_active_schools DESC"
+    },
+    {
+      "id": "ADV-11",
+      "category": "advanced",
+      "difficulty": "hard",
+      "tables": [
+        "budget"
+      ],
+      "feature": "GROUP BY ROLLUP()",
+      "question": "Generate subtotals and grand totals for budgeted amounts by event status and category using GROUP BY ROLLUP. NULL in the output represents an aggregated subtotal or grand total row.",
+      "gold_sql": "SELECT\n  IFNULL(event_status, 'ALL STATUSES') AS event_status,\n  IFNULL(category, 'ALL CATEGORIES') AS category,\n  SUM(amount) AS total_budgeted,\n  SUM(spent) AS total_spent,\n  SUM(remaining) AS total_remaining\nFROM argus_dev_dataset.budget\nGROUP BY ROLLUP(event_status, category)\nORDER BY event_status, category"
+    },
+    {
+      "id": "ADV-12",
+      "category": "advanced",
+      "difficulty": "hard",
+      "tables": [
+        "expense"
+      ],
+      "feature": "PIVOT ... FOR ... IN (...)",
+      "question": "Pivot the expense table so that each member appears once with two columns showing total approved spend and total rejected spend side by side.",
+      "gold_sql": "SELECT *\nFROM (\n  SELECT link_to_member, approved, cost\n  FROM argus_dev_dataset.expense\n)\nPIVOT (\n  SUM(cost)\n  FOR approved IN ('true' AS approved_total, 'false' AS rejected_total)\n)\nORDER BY link_to_member"
+    },
+    {
+      "id": "ADV-13",
+      "category": "advanced",
+      "difficulty": "medium",
+      "tables": [
+        "expense",
+        "attendance"
+      ],
+      "feature": "EXCEPT DISTINCT",
+      "question": "Find members who have submitted at least one expense but have never appeared in the attendance table (i.e., submitted costs without attending any event). Use EXCEPT DISTINCT.",
+      "gold_sql": "SELECT DISTINCT link_to_member AS member_id\nFROM argus_dev_dataset.expense\nEXCEPT DISTINCT\nSELECT DISTINCT link_to_member AS member_id\nFROM argus_dev_dataset.attendance"
+    },
+    {
+      "id": "ADV-14",
+      "category": "advanced",
+      "difficulty": "hard",
+      "tables": [
+        "schools"
+      ],
+      "feature": "TABLESAMPLE SYSTEM (N PERCENT)",
+      "question": "Sample approximately 10% of the schools table using TABLESAMPLE and return the approximate distribution of active versus non-active schools in the sample.",
+      "gold_sql": "SELECT\n  StatusType,\n  COUNT(*) AS sampled_count\nFROM argus_dev_dataset.schools\nTABLESAMPLE SYSTEM (10 PERCENT)\nGROUP BY StatusType\nORDER BY sampled_count DESC"
+    },
+    {
+      "id": "ADV-15",
+      "category": "advanced",
+      "difficulty": "hard",
+      "tables": [
+        "event",
+        "attendance",
+        "expense",
+        "budget"
+      ],
+      "feature": "EXISTS subquery",
+      "question": "For each event, flag whether at least one member who attended also incurred an approved expense against that same event's budget. Return event ID, event name, type, status, and the boolean flag.",
+      "gold_sql": "SELECT\n  e.event_id,\n  e.event_name,\n  e.type,\n  e.status,\n  EXISTS (\n    SELECT 1\n    FROM argus_dev_dataset.attendance AS a\n    JOIN argus_dev_dataset.expense AS ex\n      ON a.link_to_member = ex.link_to_member\n    JOIN argus_dev_dataset.budget AS b\n      ON ex.link_to_budget = b.budget_id\n    WHERE a.link_to_event = e.event_id\n      AND b.link_to_event = e.event_id\n      AND ex.approved = 'true'\n  ) AS has_attendee_approved_expense\nFROM argus_dev_dataset.event AS e\nORDER BY e.event_date"
+    }
+  ]
+}

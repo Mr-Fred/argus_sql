@@ -12,9 +12,9 @@ This blueprint breaks down the ARGUS-SQL architecture into safe, independently t
 
 ## Phase 2: Database Population & Datasets
 **Goal:** Build scripts to populate the BigQuery evaluation environments.
-- [ ] **Step 2.1: BIRD Benchmark Ingestion Script**
+- [x] **Step 2.1: BIRD Benchmark Ingestion Script**
   - Write a CLI script to read the BIRD SQLite dataset, map types to GoogleSQL, and upload the tables to BigQuery.
-- [ ] **Step 2.2: Golden Dataset Setup**
+- [x] **Step 2.2: Golden Dataset Setup**
   - Write a deployment script to create the 50 manually curated question-SQL pairs testing BigQuery-specific constructs (unnesting, window functions, partitioning).
 
 ## Phase 3: The Profiler Subsystem (M-Schema Builder)
