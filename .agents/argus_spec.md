@@ -31,7 +31,7 @@ Data flows unidirectionally. If a validation stage fails, the flow returns to th
 **Trigger:** Eventarc (BigQuery Audit Logs for DDL events).
 An asynchronous 5-stage deep profiling pipeline:
 1. **Structural Metadata Extraction:** Extract tables, columns, types, PKs, FKs from BQ `INFORMATION_SCHEMA`.
-2. **Statistical Value Sampling:** Bounded tablesample queries. `APPROX_TOP_COUNT` for strings, `MIN`/`MAX` for numerics. Detect/exclude high-cardinality IDs.
+2. **Statistical Value Sampling:** Bounded tablesample queries. `APPROX_TOP_COUNT` for strings, `MIN`/`MAX` for numerics. Detect/exclude high-cardinality IDs. The system executes bounded sampling queries utilizing TABLESAMPLE to limit bytes processed.
 3. **Semantic Synthesis (Gemini 3 Flash):** Generate business-contextual narrative summaries of tables.
 4. **Domain Classification:** Auto-classify tables into domains (e.g., Sales, HR) for downstream hard-filtering.
 5. **HyDE Augmentation (Gemini 3 Flash):** Generate 5-15 synthetic business questions the table can answer.

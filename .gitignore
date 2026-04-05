@@ -9,4 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
-# ADK
+# Environment variables
+.env
+
+# Logs
+logs/

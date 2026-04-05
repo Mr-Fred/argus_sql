@@ -19,7 +19,7 @@ This blueprint breaks down the ARGUS-SQL architecture into safe, independently t
 
 ## Phase 3: The Profiler Subsystem (M-Schema Builder)
 **Goal:** Aggregate structural and statistical metadata into BigQuery embeddings.
-- [ ] **Step 3.1: BigQuery Structural & Statistical Extractor**
+- [x] **Step 3.1: BigQuery Structural & Statistical Extractor**
   - Build service to read `INFORMATION_SCHEMA` and perform safe `APPROX_TOP_COUNT` sampling.
 - [ ] **Step 3.2: Schema Profiler Agent (via ADK)**
   - Implement the `SchemaProfilerAgent` using the ADK framework.
