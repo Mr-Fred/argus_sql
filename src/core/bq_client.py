@@ -5,6 +5,7 @@ This module provides functionality to create and update tables
 and extract data and metadata in BigQuery
 using SQL queries.
 """
+
 import logging
 from typing import Any, Dict, List
 from google.cloud import bigquery
@@ -154,10 +155,7 @@ class BigQueryClient:
         query = ""
         # If table is larger than 10GB or 1M rows, use sampling
         sampling_clause = ""
-        if (
-            table.num_bytes > LARGE_TABLE_BYTES
-            or table.num_rows > LARGE_TABLE_ROWS
-        ):
+        if table.num_bytes > LARGE_TABLE_BYTES or table.num_rows > LARGE_TABLE_ROWS:
             # STREATEGY: TABLESAMPLE SYSTEM
             # This is a BigQuery-specific syntax that allows you to sample a table.
             # Only scans a fraction of the data blocks.
@@ -208,7 +206,7 @@ class BigQueryClient:
         # 3. Execute all queries in parallel
         query = f"""
         SELECT 
-            {', '.join(select_parts)}
+            {", ".join(select_parts)}
         FROM `{self.project_id}.{self.dataset_id}.{table.table_id}`
         {sampling_clause}
         """
@@ -217,7 +215,7 @@ class BigQueryClient:
         except Exception as e:
             logger.exception("Error extracting table: %s", e)
             raise
-    
+
     def get_table_by_name(self, table_id: str) -> bigquery.Table:
         """
         Get a table by name.
