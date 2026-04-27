@@ -28,7 +28,7 @@ ARGUS-SQL is an event-driven, multi-agent serverless architecture operating excl
 Data flows unidirectionally. If a validation stage fails, the flow returns to the Reasoning Layer forming a bounded self-correction loop.
 
 ### Layer 1: Knowledge Layer (Schema Profiler)
-**Trigger:** Eventarc (BigQuery Audit Logs for DDL events).
+**Trigger:** Eventarc (BigQuery Audit Logs for DDL events). To handle bursty events efficiently, the trigger implements debouncing and batching. The profiler ensures idempotency by uniquely identifying each run using a combination of `table_id` and the event timestamp.
 An asynchronous 5-stage deep profiling pipeline:
 1. **Structural Metadata Extraction:** Extract tables, columns, types, PKs, FKs from BQ `INFORMATION_SCHEMA`.
 2. **Statistical Value Sampling:** Bounded tablesample queries. `APPROX_TOP_COUNT` for strings, `MIN`/`MAX` for numerics. Detect/exclude high-cardinality IDs. The system executes bounded sampling queries utilizing TABLESAMPLE to limit bytes processed.
@@ -81,12 +81,34 @@ CREATE TABLE `project.dataset.meta_schema_embeddings` (
   domain ARRAY<STRING>,              -- Used for Layer 3 hard pre-filtering
   last_updated TIMESTAMP,            -- Sync staleness monitoring
   m_schema_payload JSON,             -- Full semantic payload
-  semantic_embedding ARRAY<FLOAT64>  -- Gemini embedding of serialized payload
+  semantic_embedding ARRAY<FLOAT64>  -- Embedding generated natively via AI.GENERATE_EMBEDDING
 );
 ```
 
-**M-Schema J-SON Payload:**
-Encompasses the 5 stages of the Profiling layer (Structure, Statistics, Semantic Summary, and HyDE Synthetic Questions).
+**M-Schema JSON Payload Schema:**
+The `m_schema_payload` encompasses the outputs of the 5-stage profiling layer. Its schema is structured as follows:
+```json
+{
+  "table_name": "STRING",
+  "domain_tags": ["STRING"],
+  "semantic_summary": "STRING",
+  "columns": [
+    {
+      "column_name": "STRING",
+      "data_type": "STRING",
+      "is_primary_key": "BOOLEAN",
+      "foreign_key_references": ["STRING"],
+      "description": "STRING",
+      "stats": {
+        "min_value": "ANY",
+        "max_value": "ANY",
+        "approx_top_values": ["ANY"]
+      }
+    }
+  ],
+  "hyde_questions": ["STRING"]
+}
+```
 
 ---
 
@@ -113,11 +135,32 @@ Used to validate the Reactive Profiler.
 - Run 20 custom zero-knowledge adversarial prompts.
 - Ensure 100% Security Denial Rate.
 
+### 4.4 Evaluation Metrics and Thresholds
+
+**1. SchemaLinker Evaluation Protocol (Retrieval Layer metrics):**
+- **Component Ablation Metrics:** 
+  - *Dense-Only Recall@10:* Evaluates semantic retrieval natively via AI.GENERATE_EMBEDDING (Target: >= 0.72)
+  - *Sparse-Only Recall@10:* BM25 keyword matching isolation (Target: >= 0.65)
+  - *Fused Recall@10 (RRF):* Synergistic hybrid retrieval performance (Target: >= 0.90)
+- **Granularity Metrics (Depth Assessment):**
+  - *Table-Level Recall@10:* Correct tables in top 10 (Target: >= 0.90)
+  - *Column-Level Recall@10:* Correct columns in top 10 (Target: >= 0.85)
+  - *Exact Schema Match (ESM@10):* 100% of required tables AND columns in top 10 (Target: >= 0.80)
+- **Rank Quality Metric:**
+  - *NDCG@10:* Evaluates positional relevance within the top-10 retrieved elements (Target: >= 0.85)
+
+**2. Downstream Metrics:**
+- **Execution Accuracy (EX):** Exact result set match (Target: >= 60%)
+- **Valid SQL Rate (VSR):** Passes AST and BigQuery Dry Run (Target: >= 85%)
+- **Security Denial Rate (SDR):** Interception of adversarial payloads (Target: 100%)
+- **Drift Robustness:** EX_drifted / EX_original (Target: >= 0.85)
+- **Latency Overhead:** End-to-end response time (Target: p50 <= 8s, p95 <= 20s)
+
 ---
 
 ## 5. Deployment Setup (IaC)
 
-- **Agentic Framework:** Agent Development Kit (ADK)
+- **Agentic Framework:** Gemini Enterprise Agent platform with Google ADK for agent development, deployment, and governance.
 - **Infrastructure as Code:** HashiCorp Terraform.
 - **CI/CD:** Google Cloud Build.
 - **Database:** BigQuery (GoogleSQL dialect strictly).

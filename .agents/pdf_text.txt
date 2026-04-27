@@ -1,0 +1,1292 @@
+ARGUS-SQL: AUTOMATED REASONING AND GROUNDED
+UNDERSTANDING OF SCHEMA FOR TEXT-TO-SQL
+A Capstone Project Proposal
+by
+Sourou Wilfried ADENIYI
+Advisor
+Dr. Wiliam P. REY
+Mapua University
+School of Information Technology
+February 2026
+Chapter 1
+1
+INTRODUCTION
+1.1 Background of the Study
+Natural language interfaces promise to democratize enterprise data analytics by allowing 
+business users to interact with databases using conversational queries. However, a 
+significant gap remains between the performance of state-of-the-art Large Language 
+Model (LLM) approaches on academic benchmarks and their reliability in real-world 
+operational environments.
+While current systems achieve high accuracy on static datasets such as Spider 2.0 and 
+BIRD, they degrade rapidly when deployed in Enterprise Data Warehouses (EDWs). 
+EDWs are living systems characterized by continuous schema evolution, complex access 
+controls, and ambiguous business logic. Current Text-to-SQL architectures primarily fail 
+in three operational modes. First is the issue of "schema drift" and hallucination; static 
+prompt templates and periodic offline indexing fail to account for upstream data 
+engineering changes (e.g., column renaming or table refactoring), leading to stale 
+metadata and hallucinated SQL generation. Second are security blind spots. 
+Most systems sanitize inputs for basic SQL injection but fail to validate the semantic 
+scope of the generated SQL against a user's specific Row-Level Security (RLS) 
+privileges, leaving systems vulnerable to data exfiltration or backdoor payloads. Finally, 
+there is a persistent vocabulary gap. Business users speak in high-level metrics (e.g., 
+"churn rate," "monthly recurring revenue"), while databases are structured in normalized, 
+technical columns. Without deep, content-aware profiling, LLMs struggle to accurately 
+map ambiguous user's intent to physical database schemas.
+This limitation is not confined to academic prototypes. Databricks Genie (Databricks, 
+2024), a production enterprise Text-to-SQL product, illustrates the current commercial 
+state of the art: domain experts must continuously configure semantic knowledge bases, 
+manually annotating tables and columns and providing sample queries to bridge the 
+vocabulary gap between business users and database schemas. While effective within its 
+configured scope, this architecture is fundamentally reactive to human maintenance —
+schema drift is addressed only when an analyst updates the Genie space, not when the 
+underlying database changes. ARGUS-SQL proposes to automate precisely this 
+configuration and maintenance burden through reactive schema profiling and augmented 
+schema representations.
+To address these challenges, this study proposes ARGUS-SQL, a prototype agentic 
+architecture designed to mitigate schema drift and execution risks. Shifting from 
+monolithic prompt engineering to a reactive, multi-agent workflow, ARGUS-SQL aims 
+to bridge the gap between academic accuracy and operational safety in enterprise data 
+2
+environments.
+1.2 Objectives of the Study
+The following objectives guide the design, development, and evaluation of ARGUS-SQL.
+General Objective
+To design, develop, and evaluate a secure, accurate, and drift-resistant 
+Text-to-SQL system for enterprise data analytics on Google BigQuery, 
+capable of operating reliably in dynamic, real-world data warehouse 
+environments.
+Specific Objectives
+⦁ To develop a reactive schema-profiling mechanism that continuously monitors 
+BigQuery schema changes via cloud audit log events and updates the system's 
+semantic knowledge index in near real-time, mitigating stale metadata and 
+hallucinated SQL caused by schema drift.
+⦁ To build an augmented semantic schema representation — operationalizing M-
+Schema (Gao et al., 2025) and LLM profile summarization (Shkapenyuk et al., 
+2025) — and extend it with two novel augmentations: (a) Domain Classification 
+tags for context-scoped retrieval filtering, and (b) Hypothetical Document 
+Embedding (HyDE)-generated synthetic analytical questions for vocabulary gap 
+mitigation.
+3
+⦁ To implement a hybrid, domain-scoped semantic-keyword schema retrieval 
+pipeline using Reciprocal Rank Fusion (RRF), combining dense vector similarity 
+search and sparse keyword search within BigQuery, with domain classification as 
+a hard pre-filter to reduce cross-domain hallucination.
+⦁ To design a multi-agent reasoning and SQL generation workflow that separates 
+logical query planning from SQL synthesis, using Chain-of-Thought prompting 
+and Subproblem Decomposition to generate accurate GoogleSQL queries that 
+correctly handle BigQuery-specific constructs such as UNNEST, STRUCT, and 
+partition filters.
+⦁ To establish a multi-stage Defense-In-Depth execution guardrail combining: (a) 
+Abstract Syntax Tree (AST) Analysis to block mutation and exfiltration 
+commands, (b) BigQuery Dry Run execution for cost estimation and resource 
+exhaustion protection, and (c) Row-Level Security (RLS) enforcement via 
+restricted IAM service accounts.
+⦁ To evaluate the system against the BIRD benchmark and an internal BigQuery 
+Enterprise Golden Set, measuring Execution Accuracy (EX), Valid SQL Ratio 
+(VA), Drift Robustness (EX_drifted / EX_original), and end-to-end Latency, 
+using ablation baselines to isolate the contribution of each architectural 
+component.
+It is important to clarify the nature of ARGUS-SQL’s contribution. The primary novelty 
+of this work does not lie in the creation of new learning algorithms, but in the integration 
+and operationalization of four independently established techniques — reactive schema 
+profiling, augmented schema representations, domain-scoped hybrid retrieval, and 
+4
+execution-layer defense-in-depth validation — into a unified, enterprise-grade agentic 
+architecture. To the authors’ knowledge, no prior system, academic or commercial, has 
+simultaneously addressed schema drift, vocabulary gap, and execution security within a 
+single reactive pipeline targeting Google BigQuery enterprise environments.
+1.3 Research Questions
+The following empirical research questions guide the evaluation of ARGUS-SQL and 
+correspond directly to the system’s four primary design objectives:
+RQ1 (Execution Accuracy): How accurately does ARGUS-SQL translate enterprise 
+natural language queries into executable GoogleSQL compared to a zero-shot single-pass 
+baseline on the Adapted BIRD benchmark?
+RQ2 (Retrieval Quality): To what extent does domain-scoped hybrid retrieval improve 
+schema element selection recall (Recall@k) compared to single-strategy dense retrieval 
+alone?
+RQ3 (Drift Robustness): How well does the Reactive Knowledge Layer preserve 
+execution accuracy under controlled schema perturbation relative to a static indexing 
+baseline?
+RQ4 (Security and Latency): Does the Defense-In-Depth execution guard achieve 
+complete interception of adversarial SQL payloads within acceptable end-to-end latency 
+bounds (p50 ≤8 seconds, p95 ≤20 seconds)?
+1.4 Scope and Delimitation
+This study focuses on the design, development, and evaluation of ARGUS-SQL, an 
+agentic Text-to-SQL architecture built specifically on the Google Cloud Platform (GCP). 
+The system will utilize Google's Gemini LLMs (specifically Gemini 3 Flash and Gemini 
+3 Pro) for intent classification, subproblem decomposition, and SQL generation. The 
+target database dialect is strictly GoogleSQL (BigQuery). The architectural scope includes 
+the implementation of a Reactive Knowledge Layer using BigQuery audit logs and 
+Eventarc for near real-time metadata synchronization. It also encompasses the creation of 
+an augmented Metadata-Schema utilizing Domain Classification and Hypothetical 
+Document Embeddings (HyDE). Furthermore, the study includes the development of a 
+Defense-In-Depth Execution Guard comprising AST analysis, BigQuery Dry Runs for 
+cost estimation, and native Row-Level Security (RLS) enforcement.
+The study is bounded by several limitations. First, regarding schema drift, the reactive 
+profiling mechanism is designed to handle syntactic drift (e.g., column renaming, type 
+casting, table drops) but will not automatically resolve semantic drift (e.g., changes in the 
+underlying business logic definition of a metric without a structural change in the 
+database). Second, the system is strictly tailored for BigQuery and does not natively 
+support other SQL dialects (e.g., PostgreSQL, Snowflake) without further adaptation. 
+5
+Third, while the system implements strict execution-layer guardrails and AST 
+whitelisting to mitigate SQL injections, it acknowledges a "prompt injection ceiling"; 
+LLMs remain fundamentally susceptible to sophisticated jailbreaks, relying on database-
+level RLS as the ultimate fail-safe. Finally, the internal evaluation for dialect-specific 
+correctness will rely on a curated golden dataset of 50 queries, while broad quantitative 
+benchmarking will utilize the adapted BIRD Development Set. It should be noted that 
+ARGUS-SQL is designed and evaluated as a research prototype; the results reported in 
+this study are not intended to characterize production readiness.
+1.5 Significance of the Study
+This study provides substantial contributions to the fields of automated data 
+analytics and enterprise database security. The findings and the developed ARGUS-SQL 
+architecture will be highly beneficial to the following groups:
+Enterprise Organizations: By enabling a secure, highly accurate natural 
+language interface, businesses can reduce their reliance on specialized data analysts for 
+routine reporting, accelerating data-driven decision-making across non-technical 
+departments. This directly addresses the manual reconfiguration burden that characterizes 
+current commercial tools such as Databricks Genie (Databricks, 2024), where domain 
+experts must continuously annotate schemas and update semantic knowledge bases to 
+accommodate data changes — a process ARGUS-SQL’s reactive profiling architecture 
+automates.
+Data Engineering Teams: The introduction of a reactive, event-driven schema 
+profiler alleviates the burden of manually maintaining and syncing metadata 
+6
+documentation. It ensures that semantic search indexes remain fresh despite continuous 
+database migrations and schema changes.
+Security and Governance Teams: Moving beyond basic input sanitization, this 
+study introduces a robust Defense-In-Depth paradigm for generative AI analytics. By 
+integrating AST analysis, pre-execution cost analysis (Dry Runs), and strict Row-Level 
+Security enforcement, governance teams are provided with a blueprint for safely 
+deploying LLM agents without risking unauthorized data exfiltration or resource 
+exhaustion attacks. We also explore the use of Google cloud VPC Service Controls as a 
+last line of defense against data exfiltration specifically.
+Academic Researchers and Developers: This study contributes to the broader 
+academic discourse on LLM reasoning and retrieval by demonstrating the 
+operationalization of augmented M-Schemas and error-correction taxonomies in dynamic, 
+real-world environments, serving as a foundational reference for future secure multi-agent 
+database systems.
+Finally, the evaluation methodology proposed in this study — including the 
+BIRD-to-BigQuery adaptation protocol, the controlled drift simulation procedure (30% 
+column renaming, 10% type casting), and the Drift Robustness metric — provides a 
+reusable framework that future researchers can apply to evaluate drift resilience in other 
+Text-to-SQL architectures, contributing methodological tools to the field beyond the 
+specific system proposed here.
+7
+Chapter 2
+LITERATURE REVIEW
+This chapter reviews recent advancements and persistent challenges in the 
+development of Large Language Model (LLM)-based Text-to-SQL systems. The review 
+is organized thematically, focusing on the transition of these systems from controlled 
+academic benchmarks to complex, operational enterprise environments. The literature is 
+synthesized into three primary themes: Content-Aware Schema Linking and Retrieval, 
+Multi-Agent Planning and Self-Correction, and Security Vulnerabilities in LLM-to-SQL 
+Systems.
+The Text-to-SQL field, also known as Natural Language Interfaces to Databases, 
+has evolved through four broad eras. The first era spans the 1970s through the 1990s and 
+is defined by rule-based and semantic grammar approaches. Woods (1973) developed 
+LUNAR, one of the earliest experimental systems, designed to answer natural language 
+questions about Apollo mission moon rock samples through handcrafted semantic 
+grammars. Warren and Pereira (1982) advanced the paradigm with CHAT-80, which used 
+Prolog to convert English queries into logical expressions and served as a foundational 
+benchmark for early natural language processing research. These rule-based systems were 
+domain-locked by design: each required extensive manual engineering of grammar rules 
+and schema mappings, and adapting a system to a new database schema demanded a near-
+complete rebuild. This brittleness — not a lack of accuracy within their constrained 
+domains — ultimately motivated the shift toward data-driven learning approaches in the 
+8
+following decades.
+The second era emerges in the 2010s with the introduction of large-scale 
+benchmarks and neural sequence modeling. Zhong et al. (2017) introduced WikiSQL, the 
+first large-scale benchmark for natural language to SQL translation, which enabled end-
+to-end neural training at scale. Their Seq2SQL system, often cited as the first deep neural 
+network specifically designed for Text-to-SQL, utilized a sequence-to-sequence 
+framework with reinforcement learning to generate SQL components. In the same year, 
+Xu et al. (2017) introduced SQLNet, a sketch-based complement to Seq2SQL that 
+predicted slots in a predefined SQL template rather than generating the full sequence —
+significantly reducing syntax errors on the WikiSQL benchmark by constraining the 
+generation space. Yu et al. (2018) then released Spider, raising the stakes considerably by 
+establishing cross-domain generalization as the central benchmark challenge: where 
+WikiSQL was single-table, Spider demanded reasoning across multi-table schemas in 
+unseen domains.
+The third era, spanning approximately 2018 to 2022, is defined by the application 
+of pre-trained transformer language models to the schema linking and generation pipeline. 
+The release of BERT in 2018 triggered a paradigm shift — systems began using pre-
+trained encoders to capture the semantic alignment between natural language questions 
+and database schemas, replacing recurrent sequence-to-sequence architectures entirely. 
+Guo et al. (2019) proposed IRNet, which introduced intermediate representations to 
+decouple schema linking from SQL generation; Wang et al. (2020) advanced this with 
+RAT-SQL, a relation-aware schema encoder that explicitly modeled foreign key 
+9
+relationships between tables; Cao et al. (2021) extended the paradigm with LGESQL, a 
+line graph enhanced model capturing both local and non-local schema relations; and 
+Scholak et al. (2021) introduced PICARD, a constrained autoregressive decoding 
+approach that enforced syntactic SQL validity at generation time. Together, these systems 
+defined the pre-trained language model era of Text-to-SQL and established schema-aware 
+encoding as the dominant architectural pattern for the Spider benchmark.
+The fourth era, beginning around 2022, marks the shift to Large Language Model-
+based prompting and fine-tuning. Li et al. (2023) proposed RESDSQL, decoupling 
+schema linking from skeleton parsing; Fu et al. (2023) introduced CatSQL in the VLDB 
+Endowment, a production-oriented sketch-based approach explicitly designed for real-
+world deployment; Gao et al. (2024) published DAIL-SQL in VLDB, achieving 86.6% 
+execution accuracy on Spider through systematic prompt engineering; and Li et al. (2024) 
+contributed SuperSQL, also in VLDB, providing comprehensive analysis of whether such 
+benchmark performance reflects genuine enterprise readiness. New benchmarks such as 
+BIRD (Li et al., 2023) challenged these models with large-scale database content and 
+complex business logic, while architectural patterns shifted from fine-tuning toward 
+sophisticated prompt engineering and multi-agent workflows. Critically, this rapid 
+benchmark progress has not translated to enterprise environments — the gap that 
+motivates this chapter’s thematic analysis.
+2.1 Content-Aware Schema Linking and Retrieval
+The enterprise deployment gap is empirically documented across multiple peer-
+10
+reviewed studies. Lee et al. (2021, KaggleDBQA), published at ACL-IJCNLP, 
+demonstrated that systems achieving strong Spider accuracy collapsed substantially when 
+evaluated on real Kaggle databases with sparse documentation and ambiguous schemas. 
+Zhang et al. (2024, ScienceBenchmark), published in the VLDB Endowment, reinforced 
+this finding across three real-world domain-specific environments — astrophysics, cancer 
+research, and research policy-making — where existing systems failed due to vocabulary 
+gaps and absent metadata. Most starkly, Lei et al. (2025, Spider 2.0), published at ICLR, 
+showed that state-of-the-art models scoring above 80% on Spider dropped below 10% 
+execution accuracy on real enterprise workflow tasks. These three peer-reviewed findings 
+collectively establish the empirical foundation for the three persistent gaps examined in 
+this chapter, and directly motivate the design priorities of ARGUS-SQL.
+A fundamental challenge in Text-to-SQL generation is mapping ambiguous 
+natural language queries to precise, normalized database schemas — a process known as 
+schema linking. The literature uniformly agrees that feeding an entire enterprise database 
+schema into an LLM’s context window degrades performance, increases cost, and causes 
+hallucinations (Talaei et al., 2024; Wang et al., 2025). To address this, multiple 
+frameworks converge on multi-stage hierarchical filtering pipelines that progressively 
+prune irrelevant schema elements before any SQL is generated. CHESS (Talaei et al., 
+2024) applies a funnel approach — keyword extraction, column filtering, table selection, 
+and final column selection — while LinkAlign (Wang et al., 2025) structures this 
+hierarchically by first isolating the relevant database, then pruning schemas, and finally 
+resolving exact tables and columns via multi-agent debate. Despite their architectural 
+11
+differences, both systems treat context reduction as a prerequisite for accurate generation. 
+Fu et al. (2023, CatSQL), in a production-oriented deployment published in the VLDB 
+Endowment, similarly demonstrate this priority — introducing a sketch-based generation 
+framework paired with a domain-knowledge semantic correction layer that leverages 
+database-specific rules as a post-generation repair signal, achieving both higher accuracy 
+and significantly greater throughput than prior approaches.
+A central question these pruning architectures must answer is: once the relevant 
+schema elements have been selected, in what format should they be presented to the 
+LLM? Raw Data Definition Language (DDL) — the CREATE TABLE statements that 
+define a database’s structure — is the simplest answer, but it is a poor one. DDL is 
+verbose, includes implementation details irrelevant to query generation, and provides no 
+semantic context: a column named tot_rev_usdin a DDL statement conveys nothing 
+about whether it represents recognized revenue, gross bookings, or net refunds. Gao et al. 
+(2025) address this directly through M-Schema, a semi-structured schema representation 
+designed specifically to help LLMs understand the hierarchical relationships between 
+databases, tables, and columns without the noise of raw DDL. M-Schema organizes its 
+content around explicit structural tokens: 【DB_ID】marks the database identifier, # 
+Tablesignifies individual tables with optional table-level descriptions, and 【Foreign 
+Keys】groups all foreign key relationships explicitly rather than embedding them inside 
+individual column definitions. This hierarchical tokenization allows the model to navigate 
+the schema’s relational structure at a glance, without parsing DDL syntax.
+The most significant innovation within M-Schema is its column tuple format. 
+12
+Rather than defining a column as a single line of DDL, M-Schema represents each 
+column as a structured tuple containing five elements: the column name, the data type, a 
+natural-language column description, a primary key identifier, and a set of streamlined 
+example values. The column description — which can be retrieved directly from the 
+database catalog or generated by an LLM during profiling — decodes abbreviations, 
+clarifies intended usage, and distinguishes semantically similar columns. The example 
+values ground the model in the actual data it will be querying, enabling it to recognize 
+that a string column containing values such as ‘Confirmed’, ‘Pending’, and ‘Cancelled’ is 
+a status enumeration rather than a free-text field. By presenting primary key identifiers 
+explicitly within each tuple, M-Schema also preserves the relational topology of the 
+schema in a form the model can directly use for JOIN reasoning, without requiring it to 
+infer key relationships from DDL constraints. Together, these elements make M-Schema 
+substantially more compact and semantically informative than DDL, and it has been 
+adopted or adapted by several subsequent frameworks as their default schema 
+representation format.
+Beyond structural pruning, the literature agrees on two additional retrieval 
+techniques. First, identifying which columns contain the literal values mentioned in a user 
+query is critical — recognizing, for example, that “Fresno” maps to a City column rather 
+than a State or Region column. CHESS, XiYan-SQL (Gao et al., 2025), and the 
+Automatic Metadata Extraction framework (Shkapenyuk et al., 2025) all rely on Locality-
+Sensitive Hashing (LSH) to index unique database values, enabling approximate nearest-
+neighbor matching that tolerates typos and formatting inconsistencies. Second, to bridge 
+13
+the vocabulary gap between vague business terminology and cryptic column names, 
+CHESS, XiYan-SQL, and AgenticData (Sun et al., 2025) convert column descriptions 
+and table catalogs into dense vector embeddings, enabling cosine-similarity retrieval over 
+semantic space rather than lexical overlap.
+However, the literature is not uniform in its conclusions about the importance of 
+schema linking. A significant contradiction exists between frameworks regarding how 
+necessary explicit schema linking actually is for state-of-the-art models. ReFoRCE (Deng 
+et al., 2025) argues that strong reasoning models can internally infer relevant schema 
+information without explicit supervision: in their ablation studies on the Spider 2.0 
+benchmark, providing perfect gold-standard tables yielded only a marginal execution 
+accuracy gain of +0.37%, suggesting schema linking may have diminishing returns for 
+frontier models. Shkapenyuk et al. (2025) directly contradict this finding. In their BIRD 
+benchmark experiments, perfect schema linking improved execution accuracy from 
+63.2% to 77.4% with GPT-4o — a gain of over 14 percentage points — leading them to 
+assert that schema linking remains an absolute necessity for real-world scaling, 
+irrespective of model capability. This contradiction is not yet resolved in the literature, 
+and likely reflects a difference in benchmark characteristics: Spider 2.0 features longer, 
+more reasoning-intensive queries, while BIRD is specifically designed around content-
+sensitive enterprise databases where value-level disambiguation matters most. The 
+tension is further complicated by subsequent peer-reviewed findings. Gao et al. (2024, 
+DAIL-SQL), published in the VLDB Endowment, achieved 86.6% execution accuracy on 
+Spider through systematic prompt engineering alone — suggesting that for well-
+14
+structured benchmarks, schema linking optimization may be approaching saturation. Li et 
+al. (2024, SuperSQL), also published in VLDB, showed through comprehensive 
+experimental analysis that this benchmark saturation coexists with persistent failure on 
+real-world schemas, suggesting the contradiction may be an artifact of benchmark design 
+rather than a genuine reflection of model capability in enterprise environments.
+Individual frameworks also achieve capabilities that others do not. Shkapenyuk et 
+al. (2025) address the common scenario where a database entirely lacks documentation by 
+running automated statistical profiling — gathering minimum and maximum values, null 
+counts, and dominant categorical values — and using an LLM to generate rich semantic 
+column summaries from these statistics alone. This approach enables schema linking in 
+undocumented warehouses where systems like CHESS, which rely on existing catalog 
+descriptions, would fail entirely. ReFoRCE (Deng et al., 2025) addresses a distinct 
+problem: enterprise databases that contain hundreds of identically structured tables 
+partitioned by date (e.g., GA_SESSIONS_2016, GA_SESSIONS_2017). By applying 
+pattern-based table grouping to compress these into a single representative schema, 
+ReFoRCE achieves over 96% token reduction without information loss — a form of 
+context management that no other reviewed framework addresses.
+A critical limitation that cuts across all of these contributions is their implicit 
+assumption of a static database environment. Every framework reviewed — CHESS, 
+LinkAlign, XiYan-SQL, ReFoRCE, and Automatic Metadata Extraction — treats the 
+schema as a fixed artifact and constructs its retrieval index as an offline, one-time 
+process. In production Enterprise Data Warehouses (EDWs), this assumption does not 
+15
+hold. Schemas evolve continuously through column renames, type changes, and table 
+deprecations driven by upstream data engineering pipelines. When these changes occur, 
+statically indexed retrieval systems generate queries that reference columns and tables 
+that no longer exist, producing hallucinated SQL that fails silently or returns incorrect 
+results. This operational blind spot represents the primary gap that motivates the reactive 
+profiling architecture proposed in this study.
+2.2 Multi-Agent Planning, Execution, and Self-Correction
+The transition from single-prompt LLM generation to multi-agent frameworks has 
+fundamentally transformed how Text-to-SQL systems handle complex queries. Across 
+the literature, there is a strong consensus that monolithic query generation is insufficient 
+for real-world enterprise databases: a single LLM call cannot simultaneously resolve 
+schema ambiguity, plan multi-table join logic, generate dialect-correct SQL, and verify 
+semantic correctness (Deng et al., 2025). Frameworks therefore divide the query 
+resolution process into distinct, modular agent roles. AgenticData (Sun et al., 2025) 
+separates context gathering, logical structuring, and code writing across a Data Profiling 
+Agent, a Data Planning Agent, and a Data Manipulation Agent respectively. SQL-of-
+Thought (Chaturvedi et al., 2025) similarly employs a Subproblem Agent to decompose 
+questions into clause-level JSON elements and a separate Query Plan Agent to formulate 
+a Chain-of-Thought (CoT) plan before any SQL is synthesized. The modularity itself is 
+not in dispute — it is how that modular plan should be constructed and finalized where 
+significant divergence emerges.
+16
+SQL-of-Thought (Chaturvedi et al., 2025) and AgenticData (Sun et al., 2025) both 
+rely on generating a complete, upfront logical plan — a full semantic tree or full JSON 
+clause map — before moving to execution. DS-STAR (Nam et al., 2025) directly 
+contradicts this strategy, arguing that generating a complete plan at once leads to error 
+accumulation because early planning decisions made without execution feedback cannot 
+be revised without discarding the entire plan. Instead, DS-STAR advocates for sequential 
+iterative planning, where a Router Agent determines whether to add a single new step or 
+truncate an erroneous past step based on the intermediate output of each previous step. 
+This represents a fundamental architectural disagreement: upfront planning optimizes for 
+coherence and completeness, while iterative planning optimizes for error recovery. 
+LinkAlign (Wang et al., 2025) introduces a third variant, applying a Multi-Agent Debate 
+mechanism in which a Schema Parser and a Data Scientist agent argue over missing or 
+erroneous schema fields before any planning begins — treating schema resolution itself 
+as a planning sub-task rather than a prerequisite.
+The role of execution within the agentic pipeline is another area of active 
+divergence. The literature universally agrees that executing generated code against the 
+database is essential for evaluating correctness and providing feedback for refinement 
+(Talaei et al., 2024; Nam et al., 2025). However, frameworks differ substantially in when 
+and why they execute. Most systems execute the final generated SQL only to test for 
+syntax errors. ReFoRCE (Deng et al., 2025) goes further, using execution proactively for 
+what it terms Column Exploration: when its agents cannot reach consensus on a query, 
+ReFoRCE executes simple probing SELECT queries against the live database to actively 
+17
+investigate data values and nested structures before attempting to write the final query. 
+DS-STAR (Nam et al., 2025) takes the most extreme position, running Python scripts 
+step-by-step and feeding intermediate data outputs back into the planner at each iteration, 
+making execution a continuous feedback channel rather than a terminal validation step. 
+This degree of live database access introduces governance risks that are incompatible 
+with production EDW environments — a tension the literature has not yet resolved.
+Self-correction loops are widely adopted across these frameworks, but the 
+mechanism used to diagnose and repair errors represents the sharpest point of divergence 
+in the multi-agent literature. Frameworks such as CHESS (Talaei et al., 2024) rely on raw 
+execution feedback — syntax error messages and empty result sets — to trigger revision. 
+Shen et al. (2024) empirically challenge this approach, finding that execution-based repair 
+methods fix only a fraction of errors while actively introducing up to 40.1% new errors, 
+because providing an error message to an LLM addresses the symptom but not the 
+underlying logical flaw. SQL-of-Thought (Chaturvedi et al., 2025) supports this finding, 
+arguing that 95–99% of generated queries are already syntactically valid — meaning 
+execution feedback provides no useful signal for the vast majority of real failures, which 
+are semantic rather than structural.
+The frameworks that address this limitation do so through fundamentally different 
+mechanisms. SQL-of-Thought (Chaturvedi et al., 2025) abandons execution feedback 
+entirely for a Correction Plan Agent guided by a comprehensive 9-category Error 
+Taxonomy — covering Syntax, Schema Link, Join, Filter, Aggregation, Value, Subquery, 
+Set Operations, and Other Issues — enabling the agent to diagnose root causes and 
+18
+generate a linguistically grounded repair plan that targets the logical flaw directly. 
+MapleRepair (Shen et al., 2025) takes a more conservative approach, prioritizing a 
+symptom-guided rule-based error detection pipeline and invoking LLM regeneration only 
+when deterministic rule-based edits fail, achieving lower computational overhead and 
+fewer mis-repairs than purely LLM-based correctors. DS-STAR (Nam et al., 2025) 
+addresses the distinct problem of open-ended data science tasks, where no ground-truth 
+label exists against which to verify output. Its solution is a dedicated Verifier Agent that 
+acts as a judge — analyzing execution results against the original user query to determine 
+whether the current plan is sufficient, rather than merely checking for code errors. 
+Together, these approaches demonstrate that structured, semantics-aware correction 
+consistently outperforms raw execution feedback, and that the appropriate correction 
+strategy depends on whether the failure mode is syntactic, logical, or goal-level in nature.
+The critical limitation shared across all of these multi-agent frameworks is 
+identical to the one identified in the schema linking literature: the assumption of a 
+permissive execution environment. Systems like ReFoRCE and AgenticData achieve 
+their benchmark performance precisely by granting agents unrestricted access to execute 
+queries iteratively against a live database. In a production EDW governed by Row-Level 
+Security policies and cost controls, this assumption cannot be satisfied. The multi-agent 
+literature has produced sophisticated planning and correction architectures, but has not yet 
+addressed how to preserve their self-correction capabilities within the bounds of an 
+execution environment that restricts unverified query execution. This gap motivates the 
+Defense-In-Depth validation architecture proposed in this study, which separates the 
+19
+reasoning phase from the execution phase with deterministic, database-native checks 
+between them.
+2.3 Security Vulnerabilities and Adversarial Attacks
+The integration of generative AI directly into Enterprise Data Warehouses 
+introduces attack vectors that differ fundamentally from those addressed by traditional 
+SQL injection defenses. Conventional protections rely on input sanitization and 
+parameterized queries — techniques designed for deterministic application code. LLM-
+based Text-to-SQL systems dynamically synthesize database commands from natural 
+language, which means the attack surface is not a fixed set of input fields but the entire 
+semantic space of human language. Recent research has systematically demonstrated that 
+this distinction renders traditional defenses ineffective against adversaries who 
+understand how LLMs generate SQL.
+The literature identifies two primary threat classes. The first is black-box 
+injection, where adversaries craft natural language inputs designed to cause the model to 
+generate malicious SQL at inference time. Peng et al. (2024) provide the foundational 
+taxonomy of these vulnerabilities, demonstrating successful in-band and blind injection 
+attacks against six commercial Text-to-SQL applications — including Baidu-UNIT and 
+AI2SQL — achieving Denial of Service and Information Disclosure in deployed 
+production systems. The second and more dangerous threat class is the backdoor supply-
+chain attack, in which malicious actors poison the model’s training data to embed covert 
+triggers. Lin et al. (2025) demonstrate this through the ToxicSQL framework, showing 
+20
+that models can be systematically manipulated to execute unauthorized commands 
+whenever a specific trigger appears in user input — without any visible degradation in 
+performance on clean queries. Critically, both threat classes agree that backdoor data 
+poisoning is stealthy by design: a compromised model passes all standard accuracy 
+benchmarks while remaining vulnerable to anyone who knows the trigger.
+A third threat class extends the attack surface beyond SQL injection entirely. 
+Klisura and Rios (2025) demonstrate a Zero-Knowledge Schema Inference attack in 
+which an adversary does not need to inject SQL at all. By submitting purely random, 
+nonsensical input strings to a Text-to-SQL system, the model is forced to inadvertently 
+leak fragments of the database schema it was prompted with. Feeding these fragments to 
+a surrogate model allows the attacker to reconstruct complete tables, column names, and 
+data types — a full schema map — without any prior knowledge of the database or access 
+to its DDL. This attack is particularly relevant for enterprise deployments because it 
+transforms the system’s own schema retrieval mechanism into an exfiltration channel.
+The proposed defenses in the literature share a sobering consensus: existing LLM 
+safety mechanisms are insufficient to stop these attacks. Klisura and Rios (2025) found 
+that adding a security system prompt instructing models to ignore nonsensical queries 
+reduced but failed to eliminate schema leakage. Lin et al. (2025) tested safety-aligned 
+models including Llama-Guard-3 and found that general content-safety filters suffered no 
+reduction in attack success rate against ToxicSQL payloads, because these filters are 
+designed for harmful language — not for structural SQL vulnerabilities embedded in 
+otherwise benign text. Static SQL analysis tools fare no better: Lin et al. (2025) report a 
+21
+100% evasion rate for ToxicSQL payloads against SQLFluff and SQLLint. The literature 
+therefore converges on the conclusion that prompt-level and model-level defenses are 
+necessary but insufficient, and that architectural defenses — specifically, separating the 
+SQL generation step from the execution step with deterministic validation between 
+them — represent the most promising path toward enterprise-grade security. This gap 
+motivates the Defense-In-Depth execution guardrail architecture proposed in this study.
+2.4 Synthesis and Gap in the Literature
+A synthesis of the three thematic areas reviewed reveals not three independent 
+research gaps but a single, structural conflict that runs across all of them: the design 
+choices that maximize Text-to-SQL accuracy in controlled benchmarks actively 
+undermine the security and operational robustness required for enterprise deployment.
+Advances in schema linking have produced systems of increasing 
+sophistication — from CHESS’s value-level LSH indexing (Talaei et al., 2024) to 
+Automatic Metadata Extraction’s LLM-generated column summaries (Shkapenyuk et al., 
+2025) to LinkAlign’s multi-agent schema debate (Wang et al., 2025). Each of these 
+systems achieves meaningful improvements in retrieval accuracy by building richer, more 
+comprehensive offline schema indexes. Yet this richness comes at the cost of static 
+rigidity: every framework assumes the schema it indexed will remain unchanged. In live 
+enterprise environments, where upstream data engineering pipelines continuously rename 
+columns, change data types, and deprecate tables, any offline index becomes a liability 
+rather than an asset. The richer and more semantically dense the index, the greater the 
+22
+confidence with which the system will generate SQL that references schema elements that 
+no longer exist. This limitation is not confined to the research literature. Databricks Genie 
+(Databricks, 2024), a production enterprise Text-to-SQL product, similarly relies on 
+continuous manual reconfiguration by domain experts to keep its semantic knowledge 
+current, suggesting the static indexing assumption remains unresolved even in 
+commercial deployments and validating the reactive profiling architecture proposed in 
+this study.
+Multi-agent planning frameworks compound this problem. Systems like 
+ReFoRCE (Deng et al., 2025) and AgenticData (Sun et al., 2025) achieve their 
+benchmark performance precisely by granting agents the ability to execute exploratory 
+queries against the live database — probing values, testing joins, and gathering execution 
+feedback — as part of their planning loop. This strategy is effective in controlled 
+evaluation environments, but it is incompatible with production data governance. 
+Granting an autonomous LLM agent unrestricted execution access to an enterprise 
+warehouse creates exactly the attack surface that Peng et al. (2024), Lin et al. (2025), and 
+Klisura and Rios (2025) have shown is exploitable. The accuracy gains of iterative 
+execution-based agents cannot be realized without also accepting the security risks those 
+systems introduce.
+The security literature itself reveals a final layer of the gap: even if an 
+organization were willing to restrict agent execution, the prompt-level and model-level 
+defenses currently available are demonstrably insufficient. Safety-aligned models, system 
+prompt hardening, and static SQL analysis tools all fail against the current generation of 
+23
+adversarial attacks. The research literature has not yet produced a deployed architecture 
+that addresses schema drift, vocabulary gap, and execution security as a unified, 
+integrated system. What is absent is a design that (1) keeps schema knowledge 
+continuously synchronized with a live, evolving warehouse, (2) separates the reasoning 
+phase from the execution phase with deterministic, database-native validation between 
+them, and (3) enforces data access governance at the execution layer rather than relying 
+solely on the LLM’s behavior. This tripartite gap — dynamic freshness, safe execution, 
+and governance enforcement — defines the research problem that ARGUS-SQL is 
+designed to address.
+The existence of this tripartite gap is empirically established by peer-reviewed 
+evidence: KaggleDBQA (Lee et al., 2021), ScienceBenchmark (Zhang et al., 2024), and 
+Spider 2.0 (Lei et al., 2025) collectively document that state-of-the-art academic systems 
+fail substantially when evaluated against real enterprise schemas. The three architectural 
+contributions of ARGUS-SQL — reactive profiling, augmented schema representations, 
+and defense-in-depth validation — are each directly motivated by one dimension of this 
+documented failure.
+Chapter 3
+METHODOLOGY
+This chapter outlines the research design, system architecture, component 
+development, and evaluation procedures for ARGUS-SQL. The methodology is 
+24
+structured to provide a reproducible, engineering-grade blueprint for building a secure, 
+drift-resistant, multi-agent Text-to-SQL system on the Google Cloud Platform (GCP).
+3.1 Research Design
+This study employs an applied research design utilizing a prototyping 
+methodology. This approach is appropriate because the research problem is not a 
+theoretical question answerable through simulation or survey, but an engineering 
+question: can a specific set of architectural decisions — reactive profiling, augmented 
+schema representation, hybrid retrieval, and defense-in-depth validation — be integrated 
+into a functional system that demonstrably outperforms existing baselines on drift 
+resilience and security? A prototype is the only artifact that can answer this question 
+empirically, since the interaction effects between components (e.g., how the quality of 
+HyDE-generated embeddings affects RRF retrieval scores, which in turn affects SQL 
+generation accuracy) cannot be predicted analytically. Simulation or modeling approaches 
+would require assumptions about these interactions that are precisely what the study aims 
+to measure.
+The prototyping process is governed by an Agile Software Development Life 
+Cycle (SDLC), divided into four structured sprints covering infrastructure provisioning, 
+retrieval engine development, multi-agent core development, and security integration and 
+testing (detailed in Section 3.6). The research is further divided into two academic 
+phases: the architectural design and infrastructure provisioning phase (Capstone 1), and 
+the implementation, integration, and quantitative evaluation phase (Capstone 2). To 
+25
+ensure reproducibility and eliminate configuration drift between these phases, all cloud 
+infrastructure required for ARGUS-SQL will be defined and deployed using 
+Infrastructure as Code (IaC) via HashiCorp Terraform, with changes version-controlled 
+and automatically provisioned through a CI/CD pipeline using Google Cloud Build.
+3.2 System Architecture Overview
+ARGUS-SQL is designed as an event-driven, multi-agent architecture natively 
+integrated into GCP, operating on a serverless microservices topology. The system is 
+composed of two independent subsystems that share a common BigQuery-based 
+knowledge store. The first is an asynchronous Profiler Subsystem that runs independently 
+of user queries, continuously maintaining the semantic index of the data warehouse via 
+the Knowledge Layer. The second is a synchronous Query Engine Subsystem that handles 
+real-time user requests, drawing on that shared index and processing each query through 
+five sequential layers:
+⦁ The Input Processing Layer: Standardizes and classifies incoming natural 
+language queries, extracting business domain and intent before any retrieval 
+occurs.
+⦁ The Retrieval Layer: A hybrid semantic-keyword engine that uses the domain 
+classification as a hard pre-filter, then applies Reciprocal Rank Fusion over vector 
+and keyword search results to select the minimal set of relevant schema artifacts.
+⦁ The Reasoning and SQL Generation Layer: Separates logical query planning 
+26
+from dialect-specific SQL synthesis. A Subproblem Decomposer first produces a 
+structured JSON logical plan; a SQL Generator then converts that plan into a valid 
+GoogleSQL statement.
+⦁ The Validation and Correction Layer (Defense-In-Depth): Validates, 
+sanitizes, and self-repairs generated SQL before execution through three 
+sequential gates: AST mutation firewall, BigQuery Dry Run cost and access 
+check, and Row-Level Security enforcement.
+⦁ The Response Synthesis Layer: Translates structured result sets into human-
+readable analytical narratives with chart recommendations and a transparent audit 
+trail of the executed SQL.
+Data flows unidirectionally through the Query Engine. A user submits a natural 
+language query, which the Input Processing Layer classifies and normalizes. The 
+classified query is passed to the Retrieval Layer, which queries the shared BigQuery 
+semantic index to retrieve the top-K relevant Augmented M-Schema payloads. These 
+payloads, together with the normalized query, are passed to the Reasoning Layer, which 
+produces a JSON logical plan and then generates SQL. The generated SQL traverses the 
+Validation Layer sequentially — AST check, then Dry Run, then RLS — before being 
+executed against BigQuery. If any validation stage fails, the ErrorTaxonomist reroutes 
+back to the Reasoning Layer with corrective context, forming a bounded self-correction 
+loop. The final result set flows to the Response Synthesis Layer, which returns a natural 
+language summary, chart recommendation, and the executed SQL to the user.
+27
+The primary database environment is Google BigQuery. Application logic and 
+agent orchestration will be containerized using Docker and hosted on Google Cloud Run, 
+operating under a custom Identity and Access Management (IAM) service account 
+configured with the principle of least privilege.
+3.2.1 System Parameters and Reproducibility
+To ensure reproducibility of the evaluation described in Section 3.4, all system 
+parameters are fixed to the values specified in Table 1. These values are treated as fixed 
+experimental defaults and are not claimed to be optimal; they establish a deterministic 
+baseline from which future work may conduct sensitivity analyses.
+Table 1. ARGUS-SQL Fixed Experimental Parameters
+Parameter Fixed 
+Value
+Affected Component Rationale
+Retrieval top-k 10 Retrieval Layer Limits schema candidates per query; 
+serves as the evaluation cutoff k for 
+all SchemaLinker metrics (Recall@
+10, ESM@10, NDCG@10) and 
+balances recall against context 
+window cost
+HyDE question count5 per table Knowledge Layer (Stage 
+5)
+Sufficient synthetic query diversity 
+without over-representing sparse 
+tables
+RRF fusion constant (k)60 Retrieval Layer (RRF)Standard default minimizing rank-
+order instability; consistent with 
+published RRF literature
+Dry Run cost threshold10 GB Validation Layer Conservative resource ceiling for 
+analytical workloads; prevents 
+resource exhaustion attacks
+Max repair loop retries3 Validation / Error 
+Taxonomist
+Prevents infinite correction cycles 
+while allowing meaningful self-
+repair attempts
+Column rename 
+perturbation rate
+30% Schema Perturbation 
+Protocol
+Representative of moderate schema 
+refactoring; derived from internal 
+pilot analysis
+Type cast perturbation 
+rate
+10% Schema Perturbation 
+Protocol
+Reflects a less frequent but high-
+impact drift type (NUMERIC to 
+STRING)
+28
+LLM temperature 
+(evaluation)
+0 SQL Generator / all LLM 
+calls
+Eliminates non-determinism across 
+benchmark runs to ensure 
+reproducible results
+3.3 System Components and Implementation
+3.3.1 The Knowledge Layer: Deep Profiling and Drift Mitigation
+To address the vocabulary gap and ongoing schema drift, ARGUS-SQL 
+introduces an asynchronous, 5-stage Deep Profiling Pipeline managed by the 
+SchemaProfiler component. This pipeline transforms raw relational metadata into a 
+retrieval-ready Augmented M-Schema semantic artifact.
+The 5-Stage Deep Profiling Pipeline:
+Stage 1 — Structural Metadata Extraction: The profiler queries BigQuery's 
+INFORMATION_SCHEMA to extract table identifiers, column names, data 
+types, and existing primary/foreign key definitions, reconstructing the explicit 
+structural topology of the warehouse.
+Stage 2 — Statistical Value Sampling: To ground the schema in observed data 
+patterns without incurring large analytical cost penalties, the system executes 
+bounded sampling queries utilizing TABLESAMPLE to limit bytes processed. 
+For categorical (STRING) columns, APPROX_TOP_COUNT(col, 5) identifies 
+dominant values. For numerical and temporal columns, minimum and maximum 
+bounds are computed. The system automatically detects and excludes high-
+cardinality columns (e.g., UUIDs, transaction identifiers) from embedding 
+29
+influence, reducing retrieval noise without requiring manual schema annotation.
+Stage 3 — Semantic Synthesis: The raw statistical outputs from Stages 1 and 2 
+are fed into Gemini 3 Flash. The model generates a business-contextual semantic 
+summary describing the analytical purpose of the table, clarifying usage patterns, 
+and explicitly warning against misuse (e.g., flagging that a payments table should 
+not be used to derive MRR without filtering for recurring charge types).
+Stage 4 — Domain Classification: Each table is automatically classified into one 
+or more business domains (e.g., Sales, Finance, HR). These tags serve as a 
+structured metadata layer for downstream hard-filtering during vector retrieval, 
+and as routing signals for the reasoning agents.
+Stage 5 — HyDE Augmentation (Inverted Hypothetical Document 
+Embeddings): Recognizing the asymmetric vector space between short user 
+intents and dense technical JSON, Gemini 3 Flash analyzes the table's profile and 
+generates 5–10 synthetic analytical questions the table can confidently answer. 
+These hypothetical queries narrow the semantic distance between a user's 
+business-language question and the schema artifact during retrieval.
+Serialization and Vector Storage:
+The output of this pipeline is serialized into an Augmented M-Schema Payload —
+a JSON artifact containing the structural metadata, statistical samples, semantic summary, 
+domain tags, and HyDE-generated questions. To avoid external vector database 
+dependencies, this artifact is natively co-located inside a dedicated BigQuery embedding 
+30
+table with the following schema:
+⦁ table_id(STRING) — Fully-qualified BigQuery identifier serving as the 
+primary key
+⦁ domain(ARRAY<STRING>) — One or more business domain tags enabling 
+multi-domain filter support
+⦁ last_updated(TIMESTAMP) — Timestamp of most recent profiling run, used 
+for drift staleness monitoring
+⦁ m_schema_payload(JSON) — Full Augmented M-Schema artifact containing 
+the complete semantic representation
+⦁ semantic_embedding(ARRAY<FLOAT64>) — Dense vector generated by 
+gemini embedding 2 over the concatenated semantic text
+Execution Modes:
+Phase 1 — Initial Baseline Profiling (Cold Start): Upon deployment, an 
+initialization script orchestrates the Deep Profiling Pipeline across the entire target 
+dataset to build the foundational vector index. This is a one-time operation 
+executed before the system accepts live queries.
+Phase 2 — Reactive Continuous Profiling: Google Eventarc monitors BigQuery 
+Audit Logs for DDL events (UpdateTable, InsertTable). Upon detection, a 
+webhook triggers the SchemaProfiler to execute the 5-stage pipeline only on the 
+31
+altered table, issuing a localized UPSERT to the embedding table and 
+synchronizing the semantic context in near real-time. To ensure idempotency, 
+each profiling run is identified by a combination of table_id and event timestamp; 
+if an Eventarc event is missed or duplicated due to network conditions, the 
+subsequent scheduled baseline refresh — executed on a configurable cron 
+interval — will reconcile any stale records by comparing last_updated timestamps 
+against BigQuery's table metadata.
+3.3.2 Input Processing Layer (Intent Understanding and Normalization)
+The Input Processing Layer standardizes user queries before any retrieval or 
+generation occurs. It utilizes a QueryParser module consisting of two primary 
+components:
+IntentRouter: Powered by Gemini 3 Flash, this agent evaluates the user prompt 
+to extract the explicit business domain and classify the input into Data Retrieval, 
+Visualization, or Out-of-Scope categories. A confidence score is produced 
+alongside the classification; queries scoring below a configurable threshold 
+(default: 0.6) are returned as AMBIGUOUS_INTENT rather than forwarded to 
+the retrieval layer, preventing costly downstream processing for underspecified 
+inputs. This also prevents unnecessary SQL generation pipelines from activating 
+for non-database requests.
+QueryRewriter: In multi-turn dialogue scenarios, this module applies co-
+reference resolution. It transforms context-dependent utterances (e.g., “What 
+32
+about last year?”) into explicit, standalone queries by appending historical context 
+from the session memory, ensuring the Retrieval Layer always receives a self-
+contained input regardless of conversational history.
+3.3.3 Retrieval Layer (Hybrid Semantic-Keyword Linking with Domain Pre-Filtering)
+The Retrieval Layer, implemented via the SchemaLinker, selects the minimal 
+subset of tables necessary to answer the normalized query.
+A key innovation of ARGUS-SQL is the use of the domain extracted by the 
+IntentRouter as a hard metadata pre-filter. By appending a structural filter to the vector 
+search query — e.g., WHERE 'Sales' IN UNNEST(domain)— the system physically 
+excludes semantically similar but contextually irrelevant tables from other departments 
+before similarity ranking is performed. This mechanism reduces context window noise 
+and prevents cross-domain hallucination without requiring any LLM call.
+Within the filtered candidate set, the system employs a hybrid retrieval strategy 
+executed natively in BigQuery: a dense Vector Search against the semantic_embedding 
+column is combined with a sparse Keyword Search against the raw JSON payload. The 
+relevance scores from both searches are combined using the Reciprocal Rank Fusion 
+(RRF) algorithm:
+RRF(d) = 1 / (k + rᵥ) + 1 / (k + rₖ)
+Where rᵥis the rank position of document din the vector search results, rₖis its 
+rank position in the keyword search results, and k = 60 is a smoothing constant that 
+33
+prevents high-rank documents from receiving disproportionately large score 
+contributions. This fusion prioritizes tables that score highly in both retrieval lists, 
+mitigating the weaknesses of purely semantic retrieval (which can miss exact column 
+name matches) and purely lexical retrieval (which cannot handle vocabulary gap queries).
+3.3.4 Reasoning and SQL Generation Layer
+To reduce hallucination and structural errors, ARGUS-SQL strictly separates 
+logical query planning from dialect-specific SQL synthesis into two sequential agent 
+calls.
+Subproblem Decomposition: The SubproblemDecomposer agent (adapted from 
+the SQL-of-Thought framework by Chaturvedi et al., 2025) transforms the natural 
+language question and the retrieved M-Schema payloads into a structured JSON 
+logical plan. The plan explicitly enumerates distinct logical fields: target tables, 
+Filters (WHERE conditions), Groupings (GROUP BY columns), Aggregations 
+(SELECT expressions with aliases), post-aggregation constraints (HAVING), and 
+ORDER BY and LIMIT directives. This structural decomposition mitigates the 
+‘lost filter’ phenomenon common in long-context single-pass generation, where 
+the model drops a filter condition from a complex multi-clause query. The plan 
+also includes a requires_unnest flag set to true whenever STRUCT or ARRAY-
+typed columns are involved, signaling the next agent to apply appropriate 
+GoogleSQL UNNEST patterns. Furthermore, leveraging system-level constraints, 
+this agent explicitly rejects meta-schema queries (e.g., ‘List all tables in the 
+database’), forming a defensive boundary against zero-knowledge schema 
+34
+inference attacks (Klisura & Rios, 2025).
+SQL Generation: The SQLGenerator agent receives the validated JSON plan and 
+the M-Schema payloads and converts them into a single, executable GoogleSQL 
+SELECT statement. Chain-of-Thought (CoT) prompting is applied: the model is 
+instructed to reason through its JOIN logic, UNNEST requirements, and 
+aggregation ordering in a structured thinking block before emitting the final SQL 
+string. This reasoning trace is not returned to the user but is retained in the agent’s 
+context window to improve self-consistency across clauses. For tables flagged 
+with requires_unnest=true, the prompt includes explicit GoogleSQL UNNEST 
+patterns for both ARRAY and ARRAY<STRUCT> types, since these constructs 
+differ significantly from standard SQL and are a common source of dialect-
+specific generation errors. The model is also instructed to apply partition filters 
+(e.g., _PARTITIONDATE or the table’s designated partition column) for large 
+partitioned tables, reducing estimated bytes processed before the Dry Run gate. 
+All markdown code fences are stripped from the model’s output before the SQL 
+string is passed to the Validation Layer.
+3.3.5 Validation and Correction Layer (Defense-In-Depth)
+To ensure safety, correctness, and cost-efficiency, all generated queries must pass 
+through a multi-stage validation firewall and repair loop before execution.
+Query Validator: This component performs three sequential checks:
+AST Analysis (Mutation Firewall): Utilizing the sqlglot Python library 
+35
+configured to the BigQuery dialect, the query is parsed into an Abstract Syntax 
+Tree. Any detected mutation node types — including DROP, CREATE, INSERT, 
+UPDATE, DELETE, ALTER, TRUNCATE, and EXPORT DATA — trigger a 
+hard rejection. This deterministic check is not dependent on LLM behavior and 
+therefore cannot be bypassed through adversarial prompting. Standard SQL 
+injection payloads embedded in natural language are neutralized at this gate 
+regardless of how the LLM interpreted the input.
+Dry Run Execution: Analytically valid queries are passed to the BigQuery API 
+with dry_run=True. This validates full GoogleSQL syntax, verifies that the 
+executing service account has IAM access to all referenced tables, and returns the 
+estimated bytes processed without incurring query costs. If the estimated bytes 
+exceed a configurable threshold (default: 10 GB), execution is halted and explicit 
+user confirmation is required before proceeding. This serves as a dynamic defense 
+against resource exhaustion attacks, where adversarial inputs are designed to 
+trigger massive Cartesian joins that consume excessive warehouse compute.
+Row-Level Security (RLS) Enforcement: Final execution is performed via a 
+restricted Service Account configured to adhere to BigQuery’s native Row-Level 
+Security policies. This ensures that even if an agent hallucinates a valid query 
+targeting restricted data, the results cannot be returned beyond the user’s explicit 
+governance permissions. Any Forbidden response from BigQuery at this stage is 
+classified as a Security error and is not retried.
+36
+ErrorTaxonomist (Repair Loop): If a query fails the AST or Dry Run validation, the 
+error is caught and classified by the ErrorTaxonomist. The underlying error taxonomy is 
+grounded in two complementary sources. Shen et al. (2024) established the foundational 
+empirical taxonomy through a systematic study of Text-to-SQL errors, identifying 7 
+categories and 29 sub-types: Syntax (e.g., function hallucination, unbalanced 
+parentheses), Schema (e.g., non-existent column references, ambiguous aliases), Logic 
+(errors detectable without knowing the NL question, such as missing CAST operations), 
+Convention (violations of value specifications or aggregation misuse), Semantic (errors 
+requiring both schema and NL question knowledge, such as incorrect table selection or 
+subquery scope inconsistencies), Not-an-Error (benchmark gold errors and valid format 
+variations), and Others (unclassifiable queries requiring full rewrites). Building on this 
+foundation, Chaturvedi et al. (2025) operationalized and expanded the taxonomy within 
+the SQL-of-Thought framework into 9 categories and 31 sub-categories, reformulated as 
+concise error codes to enable LLM-driven correction without overflowing the context 
+window. The 9 categories are: Syntax, Schema Link, Join, Filter, Aggregation, Value, 
+Subquery, Set Operations, and Other Issues. ARGUS-SQL adopts this SQL-of-Thought 
+9-category taxonomy and extends it with a tenth category: Security errors, covering 
+mutation detection (hard-rejected by the AST firewall) and RLS violations (terminated at 
+the Dry Run or execution gate). Neither Shen et al.’s nor Chaturvedi et al.’s framework 
+includes a security class, as both were designed for accuracy-focused correction in 
+controlled benchmark settings where governance violations do not arise. The inclusion of 
+a Security category enables the system to distinguish between generation failures that 
+37
+warrant automatic correction (any of the nine SQL-of-Thought categories) and violations 
+that must be terminated immediately without retry. Classified errors are routed back to the 
+appropriate upstream agent with targeted corrective instructions, forming a controlled 
+repair loop enforced with a configurable max_retries limit to prevent infinite compute 
+cycles.
+3.3.6 Response Synthesis Layer (Insight Generation and Transparency)
+The final layer translates the structured data frame outputs into user-
+comprehensible insights.
+Data-to-Text Summarization: A Gemini 3 Flash agent analyzes the result set 
+and generates a concise analytical narrative, providing business context to the raw 
+numbers.
+Visualization Routing: The system programmatically inspects the result 
+structure — temporal vs. categorical vs. multivariate — to recommend and render 
+the most appropriate chart type: line charts for time-series data, bar charts for 
+categorical aggregates, and a plain table for all other structures.
+Auditability: To ensure transparency and foster trust for technical users, the exact 
+BigQuery SQL statement used to generate the insights is always provided in a 
+collapsible UI element. Every query execution is additionally logged to Google 
+Cloud Logging with structured fields including the request ID, user ID, generated 
+SQL, estimated bytes processed, and execution status, providing a complete audit 
+38
+trail for compliance and governance review.
+3.4 Testing and Evaluation Procedures
+3.4.1 Datasets
+Evaluation will utilize a bifurcated dataset strategy designed to separately assess 
+dialect-specific correctness on BigQuery and broad generalization across domains.
+Golden Dataset (Internal Correctness): A manually curated set of 50 enterprise-
+grade question-SQL pairs specifically designed to test GoogleSQL features that 
+are absent from standard Text-to-SQL benchmarks. The dataset is organized into 
+four categories: UNNEST and ARRAY queries (15 pairs), partition-based 
+filtering using _PARTITIONDATE (15 pairs), BigQuery date and time functions 
+including DATE_TRUNC, DATE_SUB, and TIMESTAMP_DIFF (10 pairs), and 
+window functions using RANK(), LEAD(), and LAG() with PARTITION BY (10 
+pairs). Each query was authored and independently validated by the researcher 
+against a synthetic BigQuery test environment to confirm that the gold SQL 
+produces the expected result set. Due to its small sample size (N=50), results from 
+this dataset are reported as directional signal for dialect-specific correctness only 
+and are not used as the basis for quantitative claims about overall system 
+accuracy.
+Adapted BIRD Benchmark (Broad Generalization): BIRD (A Big Benchmark 
+for Large-Scale Database Grounded Text-to-SQLs, Li et al., 2023) is the current 
+standard benchmark for evaluating Text-to-SQL systems in content-sensitive, 
+39
+enterprise-scale database environments. Unlike the earlier Spider benchmark, 
+BIRD is specifically designed to require understanding of database content — not 
+just structure — because correct query generation often depends on knowing 
+which values exist in which columns. The BIRD Development Set contains 
+approximately 1,500 question-SQL pairs across 11 domains and databases of 
+varying complexity. For use in this study, all BIRD SQLite databases will be 
+migrated into BigQuery datasets, and all gold SQL statements will be 
+programmatically transpiled from SQLite dialect to GoogleSQL using sqlglot. The 
+20 most complex gold queries per database will be manually reviewed after 
+transpilation to catch constructs that do not translate cleanly between dialects. 
+This adapted benchmark provides the primary quantitative basis for all reported 
+accuracy metrics.
+3.4.2 Schema Perturbation Protocol (Drift Testing)
+To quantitatively evaluate the efficacy of the Reactive Knowledge Layer, a 
+deterministic Schema Perturbation Protocol will be designed and executed via automation 
+scripts. The protocol proceeds in four stages:
+Baseline: A baseline Execution Accuracy score is established by running the full 
+ARGUS-SQL pipeline against the static Adapted BIRD database before any 
+schema changes are applied.
+Perturbation: A Python script utilizing the BigQuery Client Library injects two 
+categories of synthetic drift. First, 30% of column names across all BIRD 
+40
+BigQuery datasets are randomly selected and renamed to business synonyms (e.g., 
+total_amt → gross_revenue, cust_id → customer_identifier). Second, 10% of 
+NUMERIC columns are cast to STRING using ALTER COLUMN statements. 
+Both the BQ schema and the corresponding gold SQL test set are updated to 
+reflect the drift, so that the ground-truth answers remain correct after perturbation.
+Latency Measurement: The time delta between the execution of each DDL 
+statement and the confirmed UPSERT of the updated embedding record in the 
+meta_schema_embeddings table via the Eventarc pipeline is recorded as the drift 
+synchronization latency.
+Recovery Validation: The full benchmark query set is re-run against both 
+ARGUS-SQL (with reactive profiling active) and the Static baseline (index frozen 
+at pre-drift state). A successful recovery requires ARGUS-SQL to maintain 
+Execution Accuracy within an acceptable margin of its pre-drift baseline without 
+any manual intervention.
+3.4.3 Evaluation Metrics and Thresholds
+The system will be evaluated against the following primary quantitative metrics. 
+Target thresholds are framed as research hypotheses rather than fixed pass/fail criteria, 
+since this is a prototype evaluation and not a production acceptance test. The hypotheses 
+are derived from the performance ranges reported for comparable multi-agent systems in 
+the literature.
+In addition to the downstream execution metrics, a dedicated SchemaLinker 
+41
+Evaluation Protocol is applied to the Retrieval Layer in isolation, using the 
+Adapted BIRD benchmark. This protocol is organized into three tiers —
+Component Ablation Metrics, Granularity Metrics, and a Rank Quality Metric —
+to provide a complete diagnostic picture of retrieval performance. Together, these 
+metrics directly address RQ2 and enable precise fault attribution: if execution 
+accuracy is low, the protocol identifies whether the failure originates at the 
+retrieval layer (wrong schema elements retrieved), at the granularity level (tables 
+retrieved but key columns missed), or at the rank level (correct elements retrieved 
+but ranked too low for effective LLM attention).
+Component Ablation Metrics (SchemaLinker Architecture Justification)
+Table-Level Recall@10 is measured across three SchemaLinker configurations on 
+the Adapted BIRD benchmark to isolate and justify the contribution of each 
+retrieval strategy. For each configuration, the metric captures the percentage of 
+queries in which all ground-truth tables required by the gold SQL appear within 
+the top-10 retrieved schema candidates.
+Dense-Only Recall@10: Evaluates the semantic retrieval power of gemini-
+embedding-001 vector search in isolation. Establishes the baseline capability of 
+dense embeddings for vocabulary-aligned queries. Target: ≥ 0.72, reflecting 
+expected degradation on queries containing specific transaction IDs, column 
+abbreviations, or domain jargon absent from the embedding training distribution.
+Sparse-Only Recall@10: Evaluates BM25 keyword matching in isolation. 
+42
+Expected to excel on exact-match jargon queries where dense embeddings 
+underperform, but to degrade on paraphrased or semantically expressed queries. 
+Target: ≥0.65, reflecting the known weakness of lexical retrieval on synonym-
+rich business language.
+Fused Recall@10 (RRF): Evaluates the synergistic performance of the hybrid 
+Reciprocal Rank Fusion pipeline. The fused score is expected to exceed both 
+individual strategies, empirically justifying the architectural overhead of 
+maintaining dual retrieval indices. Target: ≥0.90. If Fused Recall@10 does not 
+materially exceed Dense-Only Recall@10, the sparse index will be flagged for 
+architectural review.
+Granularity Metrics (Retrieval Depth Assessment)
+Using the Fused (RRF) configuration, three granularity metrics evaluate the depth 
+and completeness of schema element retrieval. These metrics decompose the 
+retrieval result into progressively stricter success criteria, allowing precise 
+identification of where the retrieval layer succeeds and where it degrades.
+Table-Level Recall@10: The percentage of queries in which all ground-truth 
+tables appear within the top-10 retrieved results. Validates that the Domain Pre-
+Filter correctly scopes retrieval to the relevant domain before RRF ranking. This 
+is the coarsest granularity metric and is expected to be the highest-scoring of the 
+three. Target: ≥0.90.
+Column-Level Recall@10: The percentage of ground-truth columns (aggregated 
+43
+globally across the full benchmark dataset) that appear within the top-10 retrieved 
+schema candidates. Column-level retrieval is fundamentally harder than table-
+level retrieval because enterprise schemas often contain dozens of columns per 
+table with semantically similar names. Successful Column-Level Recall validates 
+that the HyDE-generated synthetic analytical questions are effective at surfacing 
+the correct columns during vector search. Target: ≥0.85, reflecting the additional 
+difficulty of column disambiguation relative to table identification.
+Exact Schema Match (ESM@10): A binary per-query metric measuring the 
+percentage of queries in which 100% of the required tables AND 100% of the 
+required columns appear within the top-10 retrieved results. This is the strictest 
+retrieval criterion and corresponds to what the academic literature terms Exact 
+Schema Match. ESM@10 is the most direct upstream predictor of downstream 
+SQL accuracy: a query with ESM@10 = 0 guarantees that at least one required 
+schema element is absent from the LLM’s context window, making correct SQL 
+generation logically impossible regardless of reasoning quality. Target: ESM@10 
+≥0.80. This threshold reflects the expectation that approximately 20% of queries 
+will involve edge-case schema elements (e.g., rarely-queried nested STRUCT 
+subfields) that the retrieval layer may not surface within the top 10 results.
+Rank Quality Metric (Positional Relevance Assessment)
+NDCG@10 (Normalized Discounted Cumulative Gain): A rank-sensitive 
+metric that evaluates not only whether the correct schema elements appear within 
+the top-10 results, but where they are positioned. Because LLMs exhibit “lost-in-
+44
+the-middle” attention degradation — where items ranked at positions 5–8 receive 
+disproportionately less attention than items at positions 1–3 — placing the most 
+query-relevant schema elements at the top of the retrieved list materially affects 
+SQL generation quality even when Recall@10 is identical. NDCG@10 is 
+computed using the ground-truth SQL as the relevance signal: schema elements 
+required by the gold SQL receive a relevance score of 1, and all other retrieved 
+elements receive a score of 0. The metric is applied to the Fused (RRF) 
+configuration only. Target: NDCG@10 ≥0.85. A high NDCG@10 score relative 
+to Fused Recall@10 empirically demonstrates that the RRF fusion algorithm does 
+not merely retrieve the correct elements — it ranks them at the positions most 
+accessible to the downstream LLM, directly supporting ESM@10 and 
+downstream Execution Accuracy.
+Execution Accuracy (EX): The primary benchmark metric, measuring whether 
+the result set of the generated SQL matches the exact result set of the ground-truth 
+SQL on the Adapted BIRD benchmark. A match is determined by set equality —
+unordered row comparison — not string equality of the SQL statements 
+themselves. Target: EX ≥ 60% on the Adapted BIRD Development Set. This 
+threshold reflects the lower bound of reported EX scores for current multi-agent 
+Text-to-SQL systems on BIRD (Chaturvedi et al., 2025; Deng et al., 2025) and 
+would constitute a meaningful baseline for a prototype operating in a BigQuery-
+native environment not previously evaluated in the literature.
+Valid SQL Rate (VSR): The percentage of generated queries that pass AST 
+45
+validation and the BigQuery Dry Run without triggering a syntax or schema error. 
+VSR measures the structural reliability of the generation pipeline independently of 
+semantic correctness. Target: VSR ≥ 85%. A system generating syntactically 
+invalid SQL more than 15% of the time would indicate a fundamental problem 
+with the SQL Generation Layer’s CoT prompting or dialect handling, warranting 
+architectural revision before further evaluation.
+Security Denial Rate (SDR): The percentage of intentionally adversarial inputs 
+successfully intercepted by the AST Mutation Firewall and Dry Run layers before 
+reaching execution. Evaluated using a custom suite of 20 adversarial prompts 
+covering SQL injection via DDL commands, resource exhaustion attempts, meta-
+schema inference queries, and RLS bypass attempts. Target: SDR = 100% for 
+mutation and exfiltration payloads (AST-detectable attacks). RLS violation 
+handling is evaluated separately and is expected to be 100% by design, since RLS 
+enforcement is delegated to BigQuery’s native IAM layer rather than to the LLM.
+Drift Robustness: Computed as EX_drifted / EX_original, where EX_drifted is 
+the Execution Accuracy of each system after the Schema Perturbation Protocol is 
+applied and EX_original is its pre-drift baseline. A Drift Robustness score of 1.0 
+indicates no degradation under drift. Target: ARGUS-SQL achieves a Drift 
+Robustness score ≥ 0.85, while the Static baseline is hypothesized to score ≤
+0.60, reflecting the expected impact of 30% column renaming on a system with a 
+frozen schema index.
+46
+Latency Overhead: End-to-end response time in seconds from query submission 
+to result delivery, measured at the 50th and 95th percentile over all benchmark 
+queries. Target: p50 ≤8 seconds, p95 ≤20 seconds. These thresholds reflect the 
+additional overhead introduced by the multi-agent pipeline, Dry Run validation, 
+and hybrid retrieval compared to single-pass zero-shot generation, and represent a 
+latency range that remains acceptable for analytical (non-operational) query 
+workloads.
+3.4.4 Data Analysis
+To quantitatively assess the performance of ARGUS-SQL, the evaluation metrics 
+will be calculated using the following statistical treatments. All calculations will be 
+implemented in Python using the BigQuery Client Library for result set retrieval and 
+standard data science libraries for metric computation.
+Execution Accuracy (EX):
+EX = N_correct / N_total
+N_correctis the number of generated queries whose result set is identical to the ground-
+truth result set (evaluated by set equality), and N_totalis the total number of evaluation 
+queries in the benchmark.
+Valid SQL Rate (VSR):
+VSR = N_valid / N_total
+N_validis the number of generated queries that pass both the AST validation gate and the 
+BigQuery Dry Run without triggering a syntax or schema error, and N_totalis the total 
+number of evaluation queries.
+Security Denial Rate (SDR):
+47
+SDR = N_denied / N_adversarial
+N_deniedis the number of adversarial inputs successfully intercepted by the AST firewall 
+or Dry Run gate before reaching execution, and N_adversarialis the total number of 
+adversarial test cases in the security evaluation suite. SDR is reported separately for each 
+attack category (mutation injection, resource exhaustion, meta-schema inference).
+Drift Robustness:
+Drift Robustness = EX_drifted / EX_original
+EX_driftedis the Execution Accuracy measured after the Schema Perturbation Protocol is 
+applied, and EX_originalis the pre-drift baseline. A score of 1.0 indicates perfect 
+resilience to the applied schema perturbations. Scores will be computed separately for 
+ARGUS-SQL (reactive profiling active) and the Static baseline (frozen index), and the 
+difference between the two scores constitutes the primary evidence for the value of the 
+Reactive Knowledge Layer.
+Latency: End-to-end latency will be measured using Google Cloud Trace, which 
+provides per-agent span data allowing the contribution of each pipeline stage to be 
+decomposed. Latency will be reported as median (p50) and 95th percentile (p95) across 
+all benchmark queries. The per-stage breakdown will identify whether any single 
+component — retrieval, LLM reasoning, Dry Run — accounts for a disproportionate 
+share of total overhead, informing optimization priorities for the Capstone 2 
+implementation phase.
+Statistical Confidence Reporting: To account for non-determinism in LLM 
+outputs, each benchmark evaluation run will be repeated a minimum of two times with 
+LLM temperature fixed at 0 (as specified in Table 1). Execution Accuracy (EX) and Valid 
+SQL Rate (VSR) will be reported as mean ± standard deviation across runs. The 
+SchemaLinker retrieval metrics (Dense-Only Recall@10, Sparse-Only Recall@10, Fused 
+Recall@10, Table-Level Recall@10, Column-Level Recall@10, ESM@10, and NDCG@
+48
+10) are deterministic given fixed retrieval indices and a fixed benchmark, and will be 
+reported as single-run point estimates. Security Denial Rate (SDR) and Drift Robustness 
+are similarly deterministic given the fixed adversarial test suite and Schema Perturbation 
+Protocol respectively, and do not require repeated runs. Where variance is observed 
+across EX or VSR runs, individual query-level discrepancies will be logged and analyzed 
+to identify categories of instability in the generation pipeline. Critically, any query where 
+ESM@10 = 0 will be excluded from the Execution Accuracy denominator in a secondary 
+reported figure, isolating the contribution of retrieval failure from generation failure in the 
+overall accuracy results.
+3.5 Ethical Considerations
+Because this project involves generative AI interacting with enterprise database 
+architectures, strict ethical guidelines will be enforced. No real-world Personally 
+Identifiable Information (PII) or sensitive corporate data will be used during development 
+or evaluation. All data populated within the BigQuery testing environment will be strictly 
+synthetic or sourced from open-source datasets — specifically the BIRD benchmark data, 
+which was released for academic use. The synthetic Golden Dataset will be constructed to 
+represent realistic enterprise query patterns without reference to any real organization’s 
+data or business logic.
+A specific ethical risk unique to ARGUS-SQL’s profiling architecture warrants 
+explicit attention. The HyDE Augmentation stage (Stage 5 of the Deep Profiling Pipeline) 
+instructs Gemini 3 Flash to generate synthetic analytical questions by analyzing a table’s 
+49
+statistical profile, including dominant categorical values and numeric ranges. If deployed 
+against a production warehouse, this stage could inadvertently encode sensitive business 
+intelligence — for example, generating a synthetic question that reveals that a pricing 
+table contains a specific discount tier applied to a named customer segment. To mitigate 
+this risk, the profiling pipeline will only be run against the synthetic test environment 
+during this study. In a future production deployment, Stage 5 outputs should be reviewed 
+before indexing, and the HyDE generation prompt should be explicitly instructed not to 
+reference specific observed values in the synthetic questions it generates.
+Furthermore, to address the inherent ethical risks of LLM hallucinations and 
+unauthorized data access, the system’s architecture is explicitly designed around the 
+principle of least privilege. The Defense-In-Depth Execution Guard ensures that all 
+automated actions are transparent, programmatically logged, and bound by native 
+BigQuery access controls, preventing the AI from circumventing established security 
+governance. All generated SQL and execution metadata are retained in Cloud Logging for 
+audit purposes.
+3.6 Threats to Validity
+Several threats to the validity of this study are acknowledged. Readers should 
+consider these limitations when interpreting reported results.
+Benchmark bias: The primary quantitative benchmark, the Adapted BIRD 
+Development Set, was originally designed for SQLite and has been transpiled to 
+GoogleSQL for this study. Despite manual review of the 20 most complex gold queries 
+50
+per database, transpilation artifacts may introduce evaluation errors that are independent 
+of system performance. Furthermore, BIRD’s deliberate elimination of ambiguous 
+questions may overstate system accuracy relative to the messier, less well-formed queries 
+encountered in authentic enterprise deployments. Results reported on the Adapted BIRD 
+benchmark should therefore be interpreted as indicative of system capability under 
+structured evaluation conditions, not as representative of performance in unconstrained 
+real-world use.
+Vendor lock-in and generalizability: All components of ARGUS-SQL are 
+designed for and evaluated within the Google Cloud Platform ecosystem, using BigQuery 
+as the database engine and Gemini 3 Flash and Gemini 3 Pro as the underlying language 
+models. Execution accuracy, latency, and security results may not generalize to other 
+cloud providers, SQL dialects (e.g., Snowflake, Redshift, PostgreSQL), or LLM families 
+(e.g., OpenAI GPT, Anthropic Claude). The Defense-In-Depth guardrails, in particular, 
+rely on BigQuery-native features such as Dry Run validation and IAM-enforced Row-
+Level Security, which have no direct equivalents in other platforms. Future work 
+extending ARGUS-SQL to other environments will require significant re-engineering of 
+the validation layer.
+Model dependency: Reported performance is contingent on the specific 
+capabilities of Gemini 3 Flash and Gemini 3 Pro at the time of evaluation. Frontier 
+models are subject to continuous updates and version changes between the Capstone 1 
+proposal phase and the Capstone 2 implementation and evaluation phase. Such updates 
+could alter SQL generation quality, instruction-following consistency, or tool-use 
+51
+behavior in ways that affect the reproducibility of reported baselines. To mitigate this 
+risk, all evaluation runs will specify explicit model version strings, and any mid-study 
+model version changes will be logged and reported as a confounding variable.
+3.7 Project Schedule
+To ensure the timely completion of the prototype for Capstone 2, the development 
+phase will be executed over four two-week agile sprints, totaling approximately eight 
+weeks of implementation work following the completion of Capstone 1:
+Sprint 1 — Weeks 1–2 (Infrastructure & Automation): Provisioning GCP 
+infrastructure via Terraform (BigQuery datasets, Cloud Run services, Eventarc 
+triggers, IAM service accounts), establishing the CI/CD pipeline via Google 
+Cloud Build, and writing and testing the webhook receivers for the Reactive 
+Knowledge Layer.
+Sprint 2 — Weeks 3–4 (Retrieval Engine): Implementing the 5-Stage Deep 
+Profiling Pipeline including all Gemini 3 Flash API integrations, configuring the 
+BigQuery Vector Search index, and implementing the RRF hybrid retrieval 
+algorithm natively in BigQuery SQL.
+Sprint 3 — Weeks 5–6 (Agent Core): Developing the multi-agent reasoning core 
+using the Google Agent Development Kit (ADK), including the 
+SubproblemDecomposer, SQLGenerator, and ResponseSynthesizer agents, 
+establishing session state management, and iterating on Chain-of-Thought prompt 
+52
+design to improve plan quality and SQL correctness.
+Sprint 4 — Weeks 7–8 (Security Integration & Testing): Integrating the sqlglot 
+AST parser and BigQuery Dry Run validation layer, implementing the 
+ErrorTaxonomist correction loop, executing the Schema Perturbation Protocol, 
+running the adversarial security test suite, and conducting final quantitative 
+benchmarking against the Adapted BIRD Development Set.
+References
+Chaturvedi, S., et al. (2025). SQL-of-Thought: Multi-agentic Text-to-SQL with Guided 
+Error Correction.arXiv:2509.00581.
+Gao, Y., et al. (2025). A preview of XiYan-SQL: A multi-generator ensemble framework 
+for Text-to-SQL.arXiv:2411.08599.
+Klisura, D., & Rios, A. (2025). Unmasking Database Vulnerabilities: Zero-Knowledge 
+Schema Inference Attacks in Text-to-SQL Systems.Findings of NAACL 2025.
+Li, J., et al. (2023). BIRD: A Big Bench for Large-Scale Database Grounded Text-to-SQL 
+Evaluation.arXiv:2305.03111.
+Lin, M., et al. (2025). Are Your LLM-based Text-to-SQL Models Secure? Exploring SQL 
+Injection via Backdoor Attacks.arXiv:2503.05445.
+53
+Peng, X., et al. (2024). On the Vulnerabilities of Text-to-SQL Models.
+arXiv:2211.15363v4.
+Shen, Y., et al. (2025). A Study of In-Context-Learning-Based Text-to-SQL Errors.
+Shkapenyuk, V., et al. (2025). Automatic Metadata Extraction for Text-to-SQL.
+arXiv:2505.19988.
+Sun, J., et al. (2025). AgenticData: An Agentic Data Analytics System for Heterogeneous 
+Data.arXiv:2508.05002.
+Tuan, R., et al. (2024). Contextual Harnessing for Efficient SQL Synthesis.
+arXiv:2405.16755.
+Wang, Z., et al. (2025). LinkAlign: Scalable Schema Linking for Real-World Multi-
+Database Text-to-SQL. arXiv:2503.18596.Yu, T., et al. (2018). Spider: A Large-Scale 
+Human-Labeled
+Dataset for Complex and Cross-Domain Semantic Parsing and Text-to-SQL Task.
+arXiv:1809.08887.
+Cao, R., et al. (2021). LGESQL: Line graph enhanced text-to-SQL model with mixed 
+local and non-local relations. In Proceedings of the 59th Annual Meeting of the 
+Association for Computational Linguistics (ACL 2021).
+Databricks. (2024). Genie spaces overview.Databricks Documentation. 
+https://docs.databricks.com/aws/en/genie
+Fu, H., Liu, C., Wu, B., Li, F., Tan, J., & Sun, J. (2023). CatSQL: Towards real world 
+natural language to SQL applications. Proceedings of the VLDB Endowment, 16(6), 
+1534–1547.
+Gao, D., et al. (2024). Text-to-SQL empowered by large language models: A benchmark 
+evaluation. Proceedings of the VLDB Endowment, 17(5), 1132–1145.
+Guo, J., et al. (2019). Towards complex text-to-SQL in cross-domain database with 
+intermediate representation. In Proceedings of the 57th Annual Meeting of the 
+Association for Computational Linguistics (ACL 2019).
+Lee, C.-H., Polozov, O., & Richardson, M. (2021). KaggleDBQA: Realistic evaluation of 
+text-to-SQL parsers. In Proceedings of the 59th Annual Meeting of the Association for 
+Computational Linguistics and the 11th International Joint Conference on Natural 
+54
+Language Processing (ACL-IJCNLP 2021), 2261–2273.
+Lei, F., et al. (2025). Spider 2.0: Evaluating language models on real-world enterprise 
+text-to-SQL workflows. In Proceedings of the 13th International Conference on Learning 
+Representations (ICLR 2025).
+Li, B., et al. (2024). The dawn of natural language to SQL: Are we fully ready? 
+Proceedings of the VLDB Endowment, 17(11), 3318–3331.
+Li, H., Zhang, J., Li, C., & Chen, H. (2023). RESDSQL: Decoupling schema linking and 
+skeleton parsing for text-to-SQL. In Proceedings of the 37th AAAI Conference on 
+Artificial Intelligence (AAAI 2023), 13067–13075.
+Scholak, T., Schucher, N., & Bahdanau, D. (2021). PICARD: Parsing incrementally for 
+constrained auto-regressive decoding from language models. In Proceedings of the 2021 
+Conference on Empirical Methods in Natural Language Processing (EMNLP 2021), 
+9895–9901.
+Wang, B., et al. (2020). RAT-SQL: Relation-aware schema encoding and linking for text-
+to-SQL parsers. In Proceedings of the 58th Annual Meeting of the Association for 
+Computational Linguistics (ACL 2020).
+Zhang, B., et al. (2024). ScienceBenchmark: A complex real-world benchmark for 
+evaluating natural language to SQL systems. Proceedings of the VLDB Endowment, 
+17(4).
+Zhong, V., et al. (2017). Seq2SQL: Generating structured queries from natural language 
+using reinforcement learning. arXiv preprintarXiv:1709.00103.
+Woods, W. A. (1973). Progress in natural language understanding: An application to 
+lunar geology. In Proceedings of the June 4–8, 1973, National Computer Conference and 
+Exposition (AFIPS ’73), 441–450. ACM.
+Warren, D. H. D., & Pereira, F. C. N. (1982). An efficient easily adaptable system for 
+interpreting natural language queries. American Journal of Computational Linguistics, 
+8(3–4), 110–122.
+Xu, X., et al. (2017). SQLNet: Generating structured queries from natural language 
+without reinforcement learning. arXiv preprintarXiv:1711.04436.
+55
